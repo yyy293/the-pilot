@@ -44,6 +44,12 @@ button:hover{background:var(--brass);color:var(--ink)}button:focus-visible{outli
 <label>Cargo <select id="startCargo"></select></label><label>Destination <select id="startDestination"></select></label></div>
 <p id="contractInfo" class="muted"></p><h2>4 · Expanded world map</h2><canvas id="worldMap" width="1100" height="320"></canvas>
 <p id="menuBalance" style="font-size:22px;font-weight:bold;color:#f3ca72;margin:14px 0">BALANCE: $1,000</p><p class="muted">Your balance is saved locally. Buy low at one port, sail to a port that needs that cargo, and sell high.</p>
+<div style="margin:12px 0;padding:10px;border:1px solid #456078;background:#10283b">
+<label for="startCheat">Loading-screen cheat code </label>
+<input id="startCheat" type="text" maxlength="9" placeholder="Enter cheat code" autocomplete="off" style="padding:8px;background:#132b40;color:white;border:1px solid #617b91">
+<button id="redeemStartCheat" type="button">REDEEM +$50,000</button>
+<span id="cheatStatus" class="muted"></span>
+</div>
 <button class="primary" id="beginVoyage" type="button">START VOYAGE</button> <span id="saveInfo" class="muted"></span></div></div>
 <div id="mapOverlay"><button id="closeMap">Close map (M)</button><h2>WORLD NAVIGATION CHART</h2><canvas id="fullMap" width="1500" height="900"></canvas><p class="muted">All named ports, islands and your current position.</p></div><div id="furniturePanel" class="p"><h2>Ship Furnishings</h2><p>Buy and place equipment on your deck. Items are saved locally.</p><div id="furnitureChoices"></div><button id="closeFurniture">Close</button></div>
 <div id="hud" class="p"></div>
@@ -447,7 +453,23 @@ $('hornBtn').addEventListener('click',soundHorn);$('mapBtn').addEventListener('c
 $('c').addEventListener('click',()=>{if(walkMode&&document.pointerLockElement!==$('c'))$('c').requestPointerLock?.()});
 function soundHorn(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;const ac=new AC(),master=ac.createGain(),filter=ac.createBiquadFilter(),comp=ac.createDynamicsCompressor();filter.type='lowpass';filter.frequency.setValueAtTime(1050,ac.currentTime);filter.Q.value=.35;comp.threshold.value=-18;comp.knee.value=12;comp.ratio.value=5;comp.attack.value=.015;comp.release.value=.35;master.gain.setValueAtTime(.0001,ac.currentTime);master.gain.exponentialRampToValueAtTime(.72,ac.currentTime+.18);master.gain.setValueAtTime(.72,ac.currentTime+1.55);master.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+2.35);filter.connect(comp);comp.connect(master);master.connect(ac.destination);[[92,'sawtooth',.28],[184,'sine',.9],[276,'sine',.48],[368,'triangle',.24],[460,'sine',.12]].forEach(([f,type,vol])=>{const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,ac.currentTime);g.gain.value=vol;o.connect(g);g.connect(filter);o.start();o.stop(ac.currentTime+2.4)});toast('📯 '+shipName+' — FOGHORN',1800);setTimeout(()=>ac.close(),2600)}catch(e){toast('Horn unavailable in this browser')}}
 let cheatBuffer='';const CHEAT='the-dev-y';let cheatCooldown=0;
-addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(k.length===1&&/[a-z0-9-]/.test(k)&&!['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName)){cheatBuffer=(cheatBuffer+k).slice(-CHEAT.length);if(cheatBuffer===CHEAT&&S){S.money+=50000;saveGame();hud();toast('CHEAT ACCEPTED: +$50,000',3500);cheatBuffer='';}}
+function redeemCheatCode(code){
+ if(String(code||'').trim().toLowerCase()!==CHEAT){$('cheatStatus').textContent='Code not recognized.';return false;}
+ if(S){S.money=(Number(S.money)||0)+50000;saveGame();hud();}
+ else{
+  let prior={};try{prior=JSON.parse(localStorage.getItem(SAVE_KEY)||'null')||{}}catch(e){}
+  const money=Math.max(0,Number(prior.money??savedData?.money??1000))+50000;
+  savedData={...(savedData||{}),...prior,money};
+  try{localStorage.setItem(SAVE_KEY,JSON.stringify(savedData));}catch(e){}
+  $('menuBalance').textContent='BALANCE: $'+money.toLocaleString();
+ }
+ $('cheatStatus').textContent='CHEAT ACCEPTED: +$50,000';$('startCheat').value='';
+ if(S)toast('CHEAT ACCEPTED: +$50,000',3500);
+ return true;
+}
+$('redeemStartCheat').addEventListener('click',()=>redeemCheatCode($('startCheat').value));
+$('startCheat').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();redeemCheatCode(e.currentTarget.value)}});
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(k.length===1&&/[a-z0-9-]/.test(k)&&!['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName)){cheatBuffer=(cheatBuffer+k).slice(-CHEAT.length);if(cheatBuffer===CHEAT){redeemCheatCode(CHEAT);cheatBuffer='';}}
  if(!walkMode&&k==='h'&&!e.repeat){soundHorn();return}if(k==='m'&&!e.repeat){$('mapOverlay').style.display=$('mapOverlay').style.display==='block'?'none':'block';if($('mapOverlay').style.display==='block')drawChart('fullMap');return}
  if(walkMode){if(k==='e'&&!e.repeat){setWalkMode(false);return}keys[k]=1;if(['w','a','s','d',' '].includes(k))e.preventDefault();return}
  keys[k]=1;if(k==='e')docked?null:tryDock();if(k===' ')e.preventDefault()});
@@ -502,6 +524,6 @@ function loop(now){
  R.render(scene,cam);
 }
 createAI();selectedShip=savedData?.ship??0;newGame(savedData?.money??1000,selectedShip,savedData);setupStart();
-$('beginVoyage').addEventListener('click',()=>{try{const cargo=cl(Number($('startCargo').value)||0,0,CARGO.length-1),dest=cl(Number($('startDestination').value)||0,0,PORTS.length-1);shipName=$('shipName').value.trim()||'Sea Rover';const chosenPaint=parseInt($('shipPaint').value.slice(1),16)||0x9c3b2e;const stored=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');const cash=Math.max(0,Number(stored?.money??savedData?.money??1000));const cost=price(PORTS[0],cargo);const load=Math.min(10,Math.floor(Math.max(0,cash-5)/cost),SHIPS[selectedShip].cap);if(load<1){$('contractInfo').textContent='Not enough money to load this cargo. Choose a cheaper cargo or earn money from a delivery.';return}newGame(cash,selectedShip,savedData);S.paint=chosenPaint;buildShip(S.ship);S.money-=load*cost;S.cargo={t:load,type:cargo,cost:load*cost};contract={cargo,dest,active:true};$('startScreen').style.display='none';$('hud').style.display='block';saveGame();hud();toast('Voyage started! Deliver '+CARGO[cargo].n+' to '+PORTS[dest].n+'. '+load+' tonnes loaded.',6000)}catch(err){console.error('Start voyage failed:',err);$('contractInfo').textContent='Could not start: '+(err?.message||'unknown error')+'. Reload the page and try again.'}});
+$('beginVoyage').addEventListener('click',()=>{try{const cargo=cl(Number($('startCargo').value)||0,0,CARGO.length-1),dest=cl(Number($('startDestination').value)||0,0,PORTS.length-1);shipName=$('shipName').value.trim()||'Sea Rover';const chosenPaint=parseInt($('shipPaint').value.slice(1),16)||0x9c3b2e;const stored=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');const cash=Math.max(0,Number(stored?.money??savedData?.money??1000));const cost=price(PORTS[0],cargo);const load=Math.min(10,Math.floor(Math.max(0,cash-5)/cost),SHIPS[selectedShip].cap);newGame(cash,selectedShip,savedData);S.paint=chosenPaint;buildShip(S.ship);if(load>0){S.money-=load*cost;S.cargo={t:load,type:cargo,cost:load*cost};contract={cargo,dest,active:true}}else{S.cargo={t:0,type:cargo,cost:0};contract={cargo,dest,active:false};}$('startScreen').style.display='none';$('hud').style.display='block';saveGame();hud();toast(load>0?'Voyage started! Deliver '+CARGO[cargo].n+' to '+PORTS[dest].n+'. '+load+' tonnes loaded.':'Voyage started empty — sail freely!',6000)}catch(err){console.error('Start voyage failed:',err);$('contractInfo').textContent='Could not start: '+(err?.message||'unknown error')+'. Reload the page and try again.'}});
 requestAnimationFrame(loop);
 </script></body></html>
