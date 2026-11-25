@@ -42,14 +42,14 @@ button:hover{background:var(--brass);color:var(--ink)}button:focus-visible{outli
 <h2>2 · Name and customize your ship</h2><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center"><label>Ship name <input id="shipName" maxlength="24" value="Sea Rover" style="padding:9px;background:#132b40;color:white;border:1px solid #617b91"></label><label>Hull color <input id="shipPaint" type="color" value="#9c3b2e" style="height:38px;width:58px;vertical-align:middle"></label></div><h2>3 · Choose a cargo contract</h2><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
 <label>Cargo <select id="startCargo"></select></label><label>Destination <select id="startDestination"></select></label></div>
 <p id="contractInfo" class="muted"></p><h2>4 · Expanded world map</h2><canvas id="worldMap" width="1100" height="320"></canvas>
-<p class="muted">Owned ships are free to select. Buy ships here when you have enough money.</p>
+<p class="muted">Your balance is saved locally. Buy low at one port, sail to a port that needs that cargo, and sell high.</p>
 <button class="primary" id="beginVoyage">Start voyage</button> <span id="saveInfo" class="muted"></span></div></div>
 <div id="furniturePanel" class="p"><h2>Ship Furnishings</h2><p>Buy and place equipment on your deck. Items are saved locally.</p><div id="furnitureChoices"></div><button id="closeFurniture">Close</button></div>
 <div id="hud" class="p"></div>
 <div id="side" class="p"><canvas id="map" width="220" height="130"></canvas><div id="wx"></div></div>
 <div id="warn" class="p"></div><div id="msg" class="p"></div>
-<div id="help" class="p">Ship mode: W/S throttle · A/D rudder · H horn · Space stop · E dock · drag mouse to look · wheel to zoom</div>
-<button id="modeBtn" type="button">Enter First-Person Walk</button><button id="hornBtn" type="button" style="position:fixed;right:12px;bottom:58px;z-index:6;padding:9px 14px;background:#17324a;color:#fff;border:1px solid #d9a441">Honk · H</button><div id="crosshair"></div><div id="walkNote">WASD move · Mouse look · Shift walk faster · E exit walk mode · Esc releases mouse</div>
+<div id="help" class="p">Ship mode: W/S throttle · D left · A right · H horn · Space stop · E dock · drag mouse to look · wheel to zoom</div>
+<button id="modeBtn" type="button">Enter First-Person Walk</button><button id="helmBtn" type="button" style="position:fixed;right:12px;bottom:102px;z-index:6;padding:9px 14px;background:#17324a;color:#fff;border:1px solid #d9a441">Drive · First Person</button><button id="hornBtn" type="button" style="position:fixed;right:12px;bottom:58px;z-index:6;padding:9px 14px;background:#17324a;color:#fff;border:1px solid #d9a441">Honk · H</button><div id="crosshair"></div><div id="walkNote">WASD move · Mouse look · Shift walk faster · E exit walk mode · Esc releases mouse</div>
 <div id="port" class="p"></div><div id="over" class="p"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -226,11 +226,11 @@ function buildShip(s){
 /* ---------- game state ---------- */
 let S,docked=null,msgT=0,over=0,sunkT=0,capT=0,deckWet=0,lastSplash=0,flash=0,hasInput=false;
 let selectedShip=0,contract={cargo:0,dest:1,active:false},shipName='Sea Rover';
-const SAVE_KEY='captainsLedgerSaveV3';
+const SAVE_KEY='captainsLedgerSaveV4';
 const FURNITURE=[{id:'bench',name:'Deck bench',cost:250},{id:'lamp',name:'Deck lantern',cost:180},{id:'crate',name:'Storage crate',cost:120},{id:'radar',name:'Radar mast',cost:900},{id:'table',name:'Captain’s table',cost:650}];
 let ownedShips=[0],placedFurniture=[],furnitureGroup=new THREE.Group(),aiShips=[];scene.add(furnitureGroup);
 function saveGame(){if(!S)return;const d={money:S.money,ship:SHIPS.indexOf(S.ship),shipName,paint:S.paint,x:S.x,z:S.z,yaw:S.yaw,hull:S.hull,water:S.water,cargo:S.cargo,ownedShips,placedFurniture,contract};try{localStorage.setItem(SAVE_KEY,JSON.stringify(d));$('saveInfo').textContent='Saved on this device'}catch(e){}}
-function loadGame(){try{const d=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');if(!d)return null;ownedShips=Array.isArray(d.ownedShips)?d.ownedShips:[0];placedFurniture=Array.isArray(d.placedFurniture)?d.placedFurniture:[];contract=d.contract||contract;shipName=d.shipName||'Sea Rover';return d}catch(e){return null}}
+function loadGame(){try{const d=JSON.parse(localStorage.getItem(SAVE_KEY)||localStorage.getItem('captainsLedgerSaveV3')||'null');if(!d)return null;ownedShips=Array.isArray(d.ownedShips)?d.ownedShips:[0];placedFurniture=Array.isArray(d.placedFurniture)?d.placedFurniture:[];contract=d.contract||contract;shipName=d.shipName||'Sea Rover';return d}catch(e){return null}}
 let savedData=loadGame();
 function drawWorldMap(){const c=$('worldMap'),x=c.getContext('2d'),w=c.width,h=c.height;x.fillStyle='#0c3c5a';x.fillRect(0,0,w,h);x.strokeStyle='#37657d';for(let a=0;a<w;a+=42){x.beginPath();x.moveTo(a,0);x.lineTo(a,h);x.stroke()}const X=v=>(v+1250)/2550*w,Z=v=>(v+800)/1650*h;x.fillStyle='#718b56';ISL.forEach(q=>{x.beginPath();x.arc(X(q.x),Z(q.z),q.r/4,0,7);x.fill()});PORTS.forEach(q=>{x.fillStyle='#f4c66d';x.beginPath();x.arc(X(q.x),Z(q.z),5,0,7);x.fill();x.font='bold 13px Georgia';x.fillStyle='#fff0c7';x.strokeStyle='#082033';x.lineWidth=3;x.strokeText(q.n,X(q.x)+8,Z(q.z)-7);x.fillText(q.n,X(q.x)+8,Z(q.z)-7)})}
 function saveMenu(){try{localStorage.setItem(SAVE_KEY,JSON.stringify({money:savedData?.money??1000,ship:selectedShip,shipName,paint:parseInt(($('shipPaint')?.value||'#9c3b2e').slice(1),16),ownedShips,placedFurniture,contract}))}catch(e){}}
@@ -252,17 +252,20 @@ function updateAI(dt){aiShips.forEach(g=>{const d=g.userData;d.a+=dt*d.speed/d.r
 
 const keys={};let camYaw=0,camPit=.43,camDist=.78;
 // First-person deck-walking state (coordinates are local to the moving/rolling ship).
-let walkMode=false,walkX=0,walkZ=0,walkYaw=0,walkPitch=0;
+let walkMode=false,helmMode=false,walkX=0,walkZ=0,walkYaw=0,walkPitch=0;
 const walkForward=new THREE.Vector3(),walkRight=new THREE.Vector3(),walkLocal=new THREE.Vector3(),walkWorld=new THREE.Vector3();
 function newGame(money,shipIndex=0,loaded=null){
  const p=PORTS[0];
- walkMode=false;updateWalkUI();
- S={ship:SHIPS[shipIndex]||SHIPS[0],paint:loaded?.paint||null,money,cargo:{t:0,type:0},water:0,hull:100,x:p.bx+p.dx*18,z:p.bz+p.dz*18,y:0,vy:0,yaw:Math.atan2(p.dx,p.dz),pitch:0,roll:0,wp:0,wr:0,speed:0,thr:0,rud:0,state:'sail',tr:0};
- if(loaded){S.x=loaded.x??S.x;S.z=loaded.z??S.z;S.yaw=loaded.yaw??S.yaw;S.hull=loaded.hull??100;S.water=loaded.water??0;S.cargo=loaded.cargo||S.cargo;shipName=loaded.shipName||shipName;}
+ walkMode=false;helmMode=false;updateWalkUI();
+ S={ship:SHIPS[shipIndex]||SHIPS[0],paint:loaded?.paint||null,money,cargo:{t:0,type:0,cost:0},water:0,hull:100,x:p.bx+p.dx*18,z:p.bz+p.dz*18,y:0,vy:0,yaw:Math.atan2(p.dx,p.dz),pitch:0,roll:0,wp:0,wr:0,speed:0,thr:0,rud:0,state:'sail',tr:0};
+ if(loaded){S.x=loaded.x??S.x;S.z=loaded.z??S.z;S.yaw=loaded.yaw??S.yaw;S.hull=loaded.hull??100;S.water=loaded.water??0;S.cargo=loaded.cargo||S.cargo;S.cargo.cost=S.cargo.cost??(S.cargo.t*price(PORTS[0],S.cargo.type));shipName=loaded.shipName||shipName;}
  buildShip(S.ship);rebuildFurniture();over=0;sunkT=0;capT=0;$('over').style.display='none';
 }
 const mass=()=>S.ship.light+S.cargo.t+S.water;
 const price=(p,i)=>Math.round(CARGO[i].p*p.m[i]*10)/10;
+// Ports buy cargo at 90% of their local wholesale value. Different demand at each port
+// creates real trade routes: buy where a cargo is cheap, sell where it is wanted.
+const sellPrice=(p,i)=>Math.round(price(p,i)*.9*10)/10;
 function toast(t,ms=2200){const m=$('msg');m.textContent=t;m.style.display='block';msgT=ms/1000}
 /* ---------- physics ---------- */
 const tv=new THREE.Vector3(),tv2=new THREE.Vector3();
@@ -271,12 +274,13 @@ function physics(dt){
  // ----- steering / propulsion -----
  if(S.state==='sail'&&!docked){
   if(keys.w)S.thr=Math.min(1,S.thr+.4*dt);if(keys.s)S.thr=Math.max(-.35,S.thr-.5*dt);if(keys[' '])S.thr*=Math.max(0,1-2*dt);
-  const tr=(keys.d?1:0)-(keys.a?1:0);S.rud+=(tr-S.rud)*Math.min(1,3*dt);
+  const tr=(keys.a?1:0)-(keys.d?1:0); // A = starboard/right, D = port/left
+  S.rud+=(tr-S.rud)*(1-Math.exp(-2.8*dt));
  } else {S.thr=0;S.rud*=.9}
  const wet=cl(S.water/(s.cap*.5),0,1);
  const target=S.thr*s.spd*(1-.5*wet)*(S.state==='sail'?1:0);
- S.speed+=(target-S.speed)*(.12+.1*(1-m/s.V))*dt*3;
- const yawRate=S.rud*(.5*cl(Math.abs(S.speed)/5,0,1))*Math.sign(S.speed||1)*(14/s.L>1?1:Math.sqrt(14/s.L)+.2>1?1:Math.sqrt(14/s.L)+.2);
+ S.speed+=(target-S.speed)*(1-Math.exp(-dt*(.38+.62*Math.abs(S.thr))));
+ const yawRate=S.rud*(.58*cl(Math.abs(S.speed)/3.5,0,1))*Math.sign(S.speed||1)*(14/s.L>1?1:Math.sqrt(14/s.L)+.2>1?1:Math.sqrt(14/s.L)+.2);
  S.yaw+=yawRate*dt;S.x+=Math.sin(S.yaw)*S.speed*dt;S.z+=Math.cos(S.yaw)*S.speed*dt;
  // collisions
  const sr=W*.75;let hit=0;
@@ -340,16 +344,16 @@ function nearestPort(){let b=null,bd=1e9;for(const p of PORTS){const d=Math.hypo
 function tryDock(){if(S.state!=='sail')return;const[p,d]=nearestPort();
  if(d>45)return toast('Nearest port is '+Math.round(d)+' m away — get within 45 m of the beacon');
  if(Math.abs(S.speed)>3)return toast('Too fast to dock — slow below 3 m/s');
- docked=p;S.speed=0;S.thr=0;if(contract.active&&PORTS[contract.dest]===p&&S.cargo.t>0&&S.cargo.type===contract.cargo){const reward=Math.round(S.cargo.t*price(p,S.cargo.type)*1.65);S.money+=reward;S.cargo.t=0;contract.active=false;toast('Contract delivered! +$'+reward.toLocaleString());saveGame()}renderPort()}
+ docked=p;S.speed=0;S.thr=0;if(contract.active&&PORTS[contract.dest]===p&&S.cargo.t>0&&S.cargo.type===contract.cargo){const reward=Math.round(S.cargo.t*price(p,S.cargo.type)*1.65);S.money+=reward;S.cargo.t=0;S.cargo.cost=0;contract.active=false;toast('Contract delivered! +$'+reward.toLocaleString());saveGame()}renderPort()}
 function renderPort(){
  const p=docked,s=S.ship,c=S.cargo,lim=Math.floor(s.cap*1.3),over=c.t-s.cap;
  const status=c.t<=0?'':over>0?`<span class="bad">⚠ OVERLOADED by ${over.toFixed(1)} t — your deck will be awash in any swell.</span>`:c.t>s.cap*.85?'<span class="bad">Heavy: little freeboard left. Avoid rough seas.</span>':'<span class="ok">Load is within safe limits.</span>';
- let h=`<h2>${p.n}</h2><div>Ship <b>${shipName}</b> · Cash <b>$${Math.round(S.money).toLocaleString()}</b> · ${s.n} · hull ${Math.round(S.hull)}% · safe capacity ${s.cap} t</div>
+ let h=`<h2>${p.n}</h2><div>Ship <b>${shipName}</b> · BALANCE <b>$${Math.round(S.money).toLocaleString()}</b> · ${s.n} · hull ${Math.round(S.hull)}% · safe capacity ${s.cap} t</div>
  <div>Hold: <b>${c.t>0?c.t.toFixed(1)+' t '+CARGO[c.type].n:'empty'}</b> ${status}</div>
  <h3>Cargo market</h3><table>`;
- CARGO.forEach((cg,i)=>{h+=`<tr><td>${cg.n}</td><td>buy $${price(p,i)}/t</td><td>sell $${(price(p,i)*.95).toFixed(1)}/t</td><td><button data-a="buy" data-i="${i}" data-n="1">+1 t</button><button data-a="buy" data-i="${i}" data-n="10">+10 t</button><button data-a="buy" data-i="${i}" data-n="-1">Fill to safe limit</button></td></tr>`});
+ CARGO.forEach((cg,i)=>{h+=`<tr><td>${cg.n}</td><td>buy $${price(p,i)}/t</td><td>port pays $${sellPrice(p,i)}/t</td><td><button data-a="buy" data-i="${i}" data-n="1">+1 t</button><button data-a="buy" data-i="${i}" data-n="10">+10 t</button><button data-a="buy" data-i="${i}" data-n="-1">Fill to safe limit</button></td></tr>`});
  h+=`</table><div style="margin-top:6px">`;
- if(c.t>0)h+=`<button data-a="sell">Sell all for $${Math.round(c.t*price(p,c.type)*.95).toLocaleString()}</button><button data-a="dump">Jettison cargo</button><button data-a="less">Unload 1 t</button>`;
+ if(c.t>0){const payout=Math.round(c.t*sellPrice(p,c.type)),net=payout-Math.round(c.cost||0);h+=`<div>Sale estimate: <b>$${payout.toLocaleString()}</b> · ${net>=0?'<span class="ok">profit +$'+net.toLocaleString()+'</span>':'<span class="bad">loss -$'+Math.abs(net).toLocaleString()+'</span>'}</div><button data-a="sell">Sell all for $${payout.toLocaleString()}</button><button data-a="dump">Jettison cargo</button><button data-a="less">Unload 1 t</button>`;}
  h+=`</div><h3>Shipyard</h3><table>`;
  SHIPS.forEach((x,i)=>{const cur=x===s;const tp=Math.round(s.cost*.6);h+=`<tr><td>${x.n}</td><td>${x.cap} t</td><td>${x.spd} m/s</td><td>$${x.cost.toLocaleString()}</td><td>${cur?'<i>current</i>':`<button data-a="ship" data-i="${i}">Buy (trade-in $${tp.toLocaleString()})</button>`}</td></tr>`});
  h+=`</table><h3>Furnish your ship</h3><p><button data-a="furniture">Furniture shop</button></p><p><button data-a="go">Set sail</button></p>`;
@@ -359,9 +363,9 @@ $('port').addEventListener('click',e=>{const b=e.target.closest('button');if(!b|
  if(a==='buy'){if(c.t>0&&c.type!==i)return toast('Empty your hold before loading a different cargo');
   const lim=Math.floor(s.cap*1.3);let n=+b.dataset.n;const pr=price(docked,i);
   if(n<0)n=Math.max(0,s.cap-c.t);n=Math.min(n,lim-c.t,Math.floor(S.money/pr));if(n<=0)return toast('Cannot load more (cash or hull limit)');
-  S.money-=n*pr;c.t+=n;c.type=i}
- if(a==='sell'){S.money+=c.t*price(docked,c.type)*.95;c.t=0}
- if(a==='dump'||a==='less'){c.t=a==='dump'?0:Math.max(0,c.t-1)}
+  S.money-=n*pr;if(c.t<=0)c.cost=0;c.t+=n;c.type=i;c.cost=(c.cost||0)+n*pr}
+ if(a==='sell'){const payout=Math.round(c.t*sellPrice(docked,c.type)),net=payout-Math.round(c.cost||0);S.money+=payout;c.t=0;c.cost=0;toast('Cargo sold for $'+payout.toLocaleString()+' · '+(net>=0?'profit +$':'loss -$')+Math.abs(net).toLocaleString())}
+ if(a==='dump'||a==='less'){if(a==='dump'){c.t=0;c.cost=0}else{const unitCost=c.t>0?(c.cost||0)/c.t:0;c.t=Math.max(0,c.t-1);c.cost=Math.max(0,(c.cost||0)-unitCost)}}
  if(a==='ship'){const x=SHIPS[i],cost=x.cost-Math.round(s.cost*.6);if(c.t>0)return toast('Unload your cargo before changing ships');
   if(S.money<cost)return toast('Not enough cash');S.money-=cost;S.ship=x;S.water=0;S.hull=100;buildShip(x)}
  renderPort();saveGame()});
@@ -370,7 +374,7 @@ const mc=$('map').getContext('2d'),MX=x=>(x+1250)/2550*220,MZ=z=>(z+800)/1650*13
 function hud(){
  const s=S.ship,c=S.cargo,r=c.t/s.cap,[p,d]=nearestPort();
  const bar=(v,col)=>`<div class="bar"><i style="width:${cl(v*100,0,100)}%;background:${col}"></i></div>`;
- $('hud').innerHTML=`<b>${shipName}</b> · ${s.n} · $${Math.round(S.money).toLocaleString()}<br>Speed ${Math.abs(S.speed).toFixed(1)} m/s · throttle ${Math.round(S.thr*100)}%
+ $('hud').innerHTML=`<b>${shipName}</b> · ${s.n}<br><span style="font-size:17px;color:#f3ca72;font-weight:bold">BALANCE: $${Math.round(S.money).toLocaleString()}</span><br>Speed ${Math.abs(S.speed).toFixed(1)} m/s · throttle ${Math.round(S.thr*100)}%
  <br>Cargo ${c.t.toFixed(1)} / ${s.cap} t ${c.t>0?CARGO[c.type].n:''}`+bar(r,r>=1?'#e5484d':r>.85?'#d9a441':'#3fb67a')+
  `Hull ${Math.round(S.hull)}%`+bar(S.hull/100,S.hull<35?'#e5484d':'#3fb67a')+
  `Water aboard ${S.water.toFixed(1)} t`+bar(S.water/(s.cap*.4),'#4aa3df')+
@@ -392,18 +396,22 @@ function hud(){
 function updateWalkUI(){
  $('modeBtn').textContent=walkMode?'Exit First-Person Walk (E)':'Enter First-Person Walk';
  $('crosshair').style.display=walkMode?'block':'none';$('walkNote').style.display=walkMode?'block':'none';
- $('help').textContent=walkMode?'FIRST PERSON: WASD move · Mouse look · Shift faster · E exit · Esc releases mouse':'Ship mode: W/S throttle · A/D rudder · H horn · Space stop · E dock · drag mouse to look · wheel to zoom';
+ $('help').textContent=walkMode?'DECK WALK: WASD move · Mouse look · Shift faster · E exit · Esc releases mouse':helmMode?'FIRST-PERSON HELM: W/S throttle · D left · A right · H horn · E dock':'Ship mode: W/S throttle · D left · A right · H horn · Space stop · E dock · drag mouse to look · wheel to zoom';
+ $('helmBtn').textContent=helmMode?'Exit First-Person Helm':'Drive · First Person';
 }
 function setWalkMode(on){
+ if(on)helmMode=false;
  if(on&&docked){toast('Set sail before walking around the deck.');return}
  walkMode=!!on;keys.w=keys.a=keys.s=keys.d=keys.shift=0;
  if(walkMode){walkX=0;walkZ=-S.ship.L*.39;walkYaw=0;walkPitch=0;camDist=1;}
  else if(document.pointerLockElement=== $('c'))document.exitPointerLock();
  updateWalkUI();
 }
-$('modeBtn').addEventListener('click',()=>setWalkMode(!walkMode));$('hornBtn').addEventListener('click',soundHorn);
+$('modeBtn').addEventListener('click',()=>setWalkMode(!walkMode));
+$('helmBtn').addEventListener('click',()=>{walkMode=false;helmMode=!helmMode;keys.w=keys.a=keys.s=keys.d=0;if(document.pointerLockElement===$('c'))document.exitPointerLock();updateWalkUI();});
+$('hornBtn').addEventListener('click',soundHorn);
 $('c').addEventListener('click',()=>{if(walkMode&&document.pointerLockElement!==$('c'))$('c').requestPointerLock?.()});
-function soundHorn(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;const ac=new AC(),gain=ac.createGain();gain.gain.setValueAtTime(.0001,ac.currentTime);gain.gain.exponentialRampToValueAtTime(.22,ac.currentTime+.08);gain.gain.setValueAtTime(.22,ac.currentTime+1.05);gain.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+1.65);gain.connect(ac.destination);[110,147,220].forEach((f,i)=>{const o=ac.createOscillator();o.type='sawtooth';o.frequency.value=f;o.connect(gain);o.start();o.stop(ac.currentTime+1.7)});toast('📯 '+shipName+' — HOOONK!',1600);setTimeout(()=>ac.close(),1900)}catch(e){toast('Horn unavailable in this browser')}}
+function soundHorn(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;const ac=new AC(),master=ac.createGain(),filter=ac.createBiquadFilter();filter.type='lowpass';filter.frequency.setValueAtTime(430,ac.currentTime);filter.Q.value=.55;master.gain.setValueAtTime(.0001,ac.currentTime);master.gain.exponentialRampToValueAtTime(.2,ac.currentTime+.22);master.gain.setValueAtTime(.2,ac.currentTime+1.55);master.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+2.25);filter.connect(master);master.connect(ac.destination);[[55,'triangle',.22],[110,'sine',.8],[147,'sine',.68],[220,'triangle',.12]].forEach(([f,type,vol])=>{const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,ac.currentTime);g.gain.value=vol;o.connect(g);g.connect(filter);o.start();o.stop(ac.currentTime+2.3)});toast('📯 '+shipName+' — FOGHORN',1800);setTimeout(()=>ac.close(),2500)}catch(e){toast('Horn unavailable in this browser')}}
 addEventListener('keydown',e=>{const k=e.key.toLowerCase();
  if(!walkMode&&k==='h'&&!e.repeat){soundHorn();return}
  if(walkMode){if(k==='e'&&!e.repeat){setWalkMode(false);return}keys[k]=1;if(['w','a','s','d',' '].includes(k))e.preventDefault();return}
@@ -415,7 +423,7 @@ addEventListener('wheel',e=>{if(!walkMode)camDist=cl(camDist*(1+e.deltaY*.001),.
 function updateFirstPerson(dt){
  // Keep the player on the open deck and inside the ship's railings.
  const s=S.ship,step=keys.shift?9:4.8;
- let forward=(keys.w?1:0)-(keys.s?1:0),side=(keys.d?1:0)-(keys.a?1:0);
+ let forward=(keys.w?1:0)-(keys.s?1:0),side=(keys.a?1:0)-(keys.d?1:0);
  const len=Math.hypot(forward,side)||1;forward/=len;side/=len;
  walkX+=Math.cos(walkYaw)*side*step*dt+Math.sin(walkYaw)*forward*step*dt;
  walkZ+=Math.sin(walkYaw)*side*step*dt+Math.cos(walkYaw)*forward*step*dt;
@@ -427,6 +435,7 @@ function updateFirstPerson(dt){
  const lookQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(walkPitch,walkYaw,0,'YXZ'));
  cam.position.copy(walkWorld);cam.quaternion.copy(shipQ).multiply(lookQ);
 }
+function updateHelmCamera(){shipObj.updateMatrixWorld(true);const bridgeZ=-S.ship.L*.24;walkLocal.set(0,S.ship.H*2.05,bridgeZ+S.ship.L*.035);walkWorld.copy(walkLocal).applyMatrix4(shipObj.matrixWorld);cam.position.copy(walkWorld);cam.quaternion.setFromRotationMatrix(new THREE.Matrix4().extractRotation(shipObj.matrixWorld));cam.position.y+=Math.sin(T*1.25)*.035+S.speed*.002;cam.fov=72;cam.updateProjectionMatrix()}
 function resize(){R.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}addEventListener('resize',resize);resize();
 let last=performance.now(),hudT=0;
 function loop(now){
@@ -439,8 +448,8 @@ function loop(now){
  const d=(25+S.ship.L*.92)*camDist,ang=S.yaw+Math.PI+camYaw;
  const tx=S.x+Math.sin(ang)*d*Math.cos(camPit),tz=S.z+Math.cos(ang)*d*Math.cos(camPit);
  const sy=Math.max(S.y,-5);
- if(walkMode){updateFirstPerson(dt)}else{
-  cam.position.lerp(new THREE.Vector3(tx,sy+4+d*Math.sin(camPit),tz),.2);
+ if(walkMode){cam.fov=70;cam.updateProjectionMatrix();updateFirstPerson(dt)}else if(helmMode){updateHelmCamera()}else{
+  cam.fov=60;cam.updateProjectionMatrix();cam.position.lerp(new THREE.Vector3(tx,sy+4+d*Math.sin(camPit),tz),.2);
   cam.position.y=Math.max(cam.position.y,waveH(cam.position.x,cam.position.z,ampAt(cam.position.x,cam.position.z))+2);
   cam.lookAt(S.x,sy+S.ship.H*1.35,S.z);
  }
@@ -451,6 +460,6 @@ function loop(now){
  R.render(scene,cam);
 }
 createAI();selectedShip=savedData?.ship??0;newGame(savedData?.money??1000,selectedShip,savedData);setupStart();
-$('beginVoyage').onclick=()=>{const cargo=+$('startCargo').value,dest=+$('startDestination').value;shipName=$('shipName').value.trim()||'Sea Rover';const chosenPaint=parseInt($('shipPaint').value.slice(1),16);const cost=price(PORTS[0],cargo),cash=savedData?.money??S.money,load=Math.min(10,Math.floor((cash-50)/cost),SHIPS[selectedShip].cap);if(load<1){$('contractInfo').textContent='Not enough money to load this cargo.';return}newGame(cash,selectedShip,savedData);S.paint=chosenPaint;buildShip(S.ship);S.money-=load*cost;S.cargo={t:load,type:cargo};contract={cargo,dest,active:true};$('startScreen').style.display='none';saveGame();toast('Deliver '+CARGO[cargo].n+' to '+PORTS[dest].n+'. '+load+' tonnes loaded.',6000)};
+$('beginVoyage').onclick=()=>{const cargo=+$('startCargo').value,dest=+$('startDestination').value;shipName=$('shipName').value.trim()||'Sea Rover';const chosenPaint=parseInt($('shipPaint').value.slice(1),16);const cost=price(PORTS[0],cargo),cash=savedData?.money??S.money,load=Math.min(10,Math.floor((cash-50)/cost),SHIPS[selectedShip].cap);if(load<1){$('contractInfo').textContent='Not enough money to load this cargo.';return}newGame(cash,selectedShip,savedData);S.paint=chosenPaint;buildShip(S.ship);S.money-=load*cost;S.cargo={t:load,type:cargo,cost:load*cost};contract={cargo,dest,active:true};$('startScreen').style.display='none';saveGame();toast('Deliver '+CARGO[cargo].n+' to '+PORTS[dest].n+'. '+load+' tonnes loaded.',6000)};
 requestAnimationFrame(loop);
 </script></body></html>
