@@ -148,7 +148,7 @@ const splashGroup=new THREE.Group();scene.add(splashGroup);let splashCooldown=0;
 function splash(){for(let i=0;i<12;i++){const m=new THREE.Mesh(new THREE.SphereGeometry(.1+Math.random()*.2,6,5),new THREE.MeshBasicMaterial({color:0xc9efff,transparent:true,opacity:.8}));m.position.set(S.x+(Math.random()-.5)*S.ship.W*2,S.y+S.ship.H*.7,S.z+(Math.random()-.5)*S.ship.L*.8);m.userData={life:.55+Math.random()*.5,vy:2+Math.random()*4};splashGroup.add(m)}}
 function updateSplash(dt){splashCooldown-=dt;if(S.state==='sail'&&Math.abs(S.speed)>1&&S.worst>.25&&splashCooldown<=0){splash();splashCooldown=.18}for(let i=splashGroup.children.length-1;i>=0;i--){const p=splashGroup.children[i];p.userData.life-=dt;p.userData.vy-=5*dt;p.position.y+=p.userData.vy*dt;p.material.opacity=Math.max(0,p.userData.life);if(p.userData.life<=0){splashGroup.remove(p);p.geometry.dispose();p.material.dispose()}}}
 /* ---------- ship ---------- */
-const shipObj=new THREE.Group();scene.add(shipObj);let cargoMesh;
+const shipObj=new THREE.Group();scene.add(shipObj);let cargoMesh,cargoVisualKey="";
 function buildShip(s){
  shipObj.clear();
  const {L,W,H}=s;
@@ -237,8 +237,25 @@ function buildShip(s){
    add(new THREE.CylinderGeometry(.12,.12,.18,12),darkMat,side*W*.32,H+.16,L*.39);
    add(new THREE.BoxGeometry(.12,.12,.9),brassMat,side*W*.32,H+.25,L*.34);
  }
- cargoMesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),paint(0xffffff,.7,.08));
- cargoMesh.visible=false;shipObj.add(cargoMesh);
+ cargoMesh=new THREE.Group();cargoMesh.visible=false;shipObj.add(cargoMesh);cargoVisualKey='';
+}
+function updateCargoBoxes(){
+ const c=S.cargo,s=S.ship,key=`${c.type}:${Math.floor(c.t)}`;
+ if(key===cargoVisualKey)return;cargoVisualKey=key;cargoMesh.clear();cargoMesh.visible=c.t>0.05;if(!cargoMesh.visible)return;
+ const count=Math.max(1,Math.min(28,Math.ceil(c.t/Math.max(1,s.cap/18))));
+ const cols=Math.min(4,Math.max(1,Math.ceil(Math.sqrt(count)))),rows=Math.ceil(count/cols);
+ const boxW=s.W*.19,boxL=Math.min(s.L*.14,s.L*.7/rows),boxH=s.H*.38;
+ const palette=[0xc4a45b,0x303b46,0x26384c,0x87939c,0x9a4e3d];
+ const main=palette[c.type%palette.length];
+ const mat=new THREE.MeshStandardMaterial({color:main,metalness:.58,roughness:.48});
+ const ribMat=new THREE.MeshStandardMaterial({color:0x172633,metalness:.68,roughness:.42});
+ for(let n=0;n<count;n++){
+  const row=Math.floor(n/cols),col=n%cols,x=(col-(cols-1)/2)*(boxW*1.08),z=(row-(rows-1)/2)*(boxL*1.08)+s.L*.05;
+  const g=new THREE.Group();const body=new THREE.Mesh(new THREE.BoxGeometry(boxW,boxH,boxL),mat);body.position.y=boxH/2;body.castShadow=true;body.receiveShadow=true;g.add(body);
+  for(let k=0;k<8;k++){const rib=new THREE.Mesh(new THREE.BoxGeometry(boxW*.025,boxH*.9,boxL*.94),ribMat);rib.position.set(-boxW*.44+k*boxW*.126,boxH/2,0);g.add(rib)}
+  const top=new THREE.Mesh(new THREE.BoxGeometry(boxW*.94,.06,boxL*.94),ribMat);top.position.y=boxH+.025;g.add(top);
+  g.position.set(x,s.H+.12,z);cargoMesh.add(g);
+ }
 }
 /* ---------- game state ---------- */
 let S,docked=null,msgT=0,over=0,sunkT=0,capT=0,deckWet=0,lastSplash=0,flash=0,hasInput=false;
@@ -246,11 +263,11 @@ let selectedShip=0,contract={cargo:0,dest:1,active:false},shipName='Sea Rover';
 const SAVE_KEY='captainsLedgerSaveV4';
 const FURNITURE=[{id:'bench',name:'Deck bench',cost:250},{id:'lamp',name:'Deck lantern',cost:180},{id:'crate',name:'Storage crate',cost:120},{id:'radar',name:'Radar mast',cost:900},{id:'table',name:'Captain’s table',cost:650}];
 let ownedShips=[0],placedFurniture=[],furnitureGroup=new THREE.Group(),aiShips=[];scene.add(furnitureGroup);
-function saveGame(){if(!S)return;const d={money:S.money,ship:SHIPS.indexOf(S.ship),shipName,paint:S.paint,x:S.x,z:S.z,yaw:S.yaw,hull:S.hull,water:S.water,cargo:S.cargo,ownedShips,placedFurniture,contract};try{localStorage.setItem(SAVE_KEY,JSON.stringify(d));$('saveInfo').textContent='Saved on this device'}catch(e){}}
+function saveGame(){if(!S)return;const d={money:Math.max(0,Math.round(Number(S.money)||0)),ship:SHIPS.indexOf(S.ship),shipName,paint:S.paint,x:S.x,z:S.z,yaw:S.yaw,hull:S.hull,water:S.water,cargo:S.cargo,ownedShips,placedFurniture,contract};savedData={...(savedData||{}),...d};try{localStorage.setItem(SAVE_KEY,JSON.stringify(d));$('saveInfo').textContent='Saved on this device';$('menuBalance').textContent='BALANCE: $'+d.money.toLocaleString()}catch(e){}}
 function loadGame(){try{const d=JSON.parse(localStorage.getItem(SAVE_KEY)||localStorage.getItem('captainsLedgerSaveV3')||'null');if(!d)return null;ownedShips=Array.isArray(d.ownedShips)?d.ownedShips:[0];placedFurniture=Array.isArray(d.placedFurniture)?d.placedFurniture:[];contract=d.contract||contract;shipName=d.shipName||'Sea Rover';return d}catch(e){return null}}
 let savedData=loadGame();
 function drawChart(id){const c=$(id),x=c.getContext('2d'),w=c.width,h=c.height;x.fillStyle='#0b3550';x.fillRect(0,0,w,h);x.strokeStyle='rgba(130,190,210,.17)';for(let a=0;a<w;a+=Math.max(35,w/28)){x.beginPath();x.moveTo(a,0);x.lineTo(a,h);x.stroke()}for(let a=0;a<h;a+=Math.max(35,h/18)){x.beginPath();x.moveTo(0,a);x.lineTo(w,a);x.stroke()}const X=v=>(v+1250)/2550*w,Z=v=>(v+800)/1650*h;x.fillStyle='#718b56';ISL.forEach(q=>{x.beginPath();x.arc(X(q.x),Z(q.z),Math.max(5,q.r/4*w/1100),0,7);x.fill()});PORTS.forEach((q,i)=>{x.fillStyle='#f4c66d';x.beginPath();x.arc(X(q.x),Z(q.z),Math.max(5,w/220),0,7);x.fill();x.font=`bold ${Math.max(12,w/85)}px Georgia`;x.fillStyle='#fff0c7';x.strokeStyle='#082033';x.lineWidth=Math.max(2,w/500);x.strokeText(q.n,X(q.x)+9,Z(q.z)-8);x.fillText(q.n,X(q.x)+9,Z(q.z)-8)});if(S){x.fillStyle='#fff';x.beginPath();x.arc(X(S.x),Z(S.z),Math.max(5,w/180),0,7);x.fill();x.font=`bold ${Math.max(12,w/90)}px Georgia`;x.fillText('YOU',X(S.x)+10,Z(S.z)+20)}}function drawWorldMap(){drawChart('worldMap');if($('mapOverlay').style.display==='block')drawChart('fullMap')}
-function saveMenu(){try{localStorage.setItem(SAVE_KEY,JSON.stringify({money:savedData?.money??1000,ship:selectedShip,shipName,paint:parseInt(($('shipPaint')?.value||'#9c3b2e').slice(1),16),ownedShips,placedFurniture,contract}))}catch(e){}}
+function saveMenu(){try{const prior=JSON.parse(localStorage.getItem(SAVE_KEY)||'null')||{};const money=Math.max(0,Math.round(Number(S?.money??savedData?.money??prior.money??1000)||0));const d={...prior,money,ship:selectedShip,shipName,paint:parseInt(($('shipPaint')?.value||'#9c3b2e').slice(1),16),ownedShips,placedFurniture,contract};savedData={...(savedData||{}),...d};localStorage.setItem(SAVE_KEY,JSON.stringify(d));$('menuBalance').textContent='BALANCE: $'+money.toLocaleString()}catch(e){}}
 function setupStart(){const box=$('shipChoices');box.innerHTML='';SHIPS.forEach((sh,i)=>{const own=ownedShips.includes(i),b=document.createElement('button');b.className='choice'+(i===selectedShip?' selected':'');b.innerHTML=`<strong>${sh.n}</strong>${sh.cap} t capacity · ${sh.spd} m/s<br><small>${own?'Owned · Ready':'Buy for $'+sh.cost.toLocaleString()}</small>`;b.onclick=()=>{if(!own){const cash=savedData?.money??1000;if(cash<sh.cost){$('contractInfo').textContent='Not enough money for this ship yet.';return}if(!confirm('Buy '+sh.n+' for $'+sh.cost+'?'))return;savedData=savedData||{money:1000};savedData.money-=sh.cost;ownedShips.push(i);saveMenu()}selectedShip=i;setupStart()};box.appendChild(b)});
  $('shipName').value=shipName;$('shipPaint').value='#'+((S?.paint??SHIPS[selectedShip].col).toString(16).padStart(6,'0'));$('startCargo').innerHTML=CARGO.map((c,i)=>`<option value="${i}">${c.n} · $${c.p}/t</option>`).join('');$('startDestination').innerHTML=PORTS.map((p,i)=>`<option value="${i}">${p.n}</option>`).join('');$('startCargo').value=contract.cargo;$('startDestination').value=contract.dest;
  const info=()=>{$('contractInfo').textContent=`Deliver ${CARGO[+$('startCargo').value].n} to ${PORTS[+$('startDestination').value].n}. Complete the contract for a delivery bonus.`};$('startCargo').onchange=info;$('startDestination').onchange=info;info();drawWorldMap();$('saveInfo').textContent=savedData?'Local save found':'Progress saves automatically';$('menuBalance').textContent='BALANCE: $'+Math.round(Number(savedData?.money??1000)).toLocaleString();}
@@ -347,7 +364,7 @@ function updateDayNight(){const phase=(T%360)/360*Math.PI*2-Math.PI/2;const sunY
 function weather(dt){
  wxTimer-=dt;
  if(wxTimer<=0){wxTarget=wxNext;wxTimer=100+Math.random()*150;
-  const r=Math.random();wxNext=r<.42?0:r<.82?1:r<.96?2:r<.995?3:4;if(wxNext>=3)toast('⛈ Forecast: '+WX[wxNext]+' approaching',3500)}
+  const r=Math.random();wxNext=r<1/7?(Math.random()<.82?3:4):r<.48?0:r<.82?1:2;if(wxNext>=3)toast('⛈ Forecast: '+WX[wxNext]+' approaching',3500)}
  wxLevel+=(wxTarget-wxLevel)*Math.min(1,dt*.05);
  const k=wxLevel/4;scene.background=SKYC.clone().lerp(STORMC,sm(0,.85,k));
  scene.fog.color.copy(scene.background);scene.fog.far=900-600*k;
@@ -429,7 +446,8 @@ $('helmBtn').addEventListener('click',()=>{walkMode=false;helmMode=!helmMode;cam
 $('hornBtn').addEventListener('click',soundHorn);$('mapBtn').addEventListener('click',()=>{drawChart('fullMap');$('mapOverlay').style.display='block'});$('closeMap').addEventListener('click',()=>{$('mapOverlay').style.display='none'});
 $('c').addEventListener('click',()=>{if(walkMode&&document.pointerLockElement!==$('c'))$('c').requestPointerLock?.()});
 function soundHorn(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;const ac=new AC(),master=ac.createGain(),filter=ac.createBiquadFilter(),comp=ac.createDynamicsCompressor();filter.type='lowpass';filter.frequency.setValueAtTime(1050,ac.currentTime);filter.Q.value=.35;comp.threshold.value=-18;comp.knee.value=12;comp.ratio.value=5;comp.attack.value=.015;comp.release.value=.35;master.gain.setValueAtTime(.0001,ac.currentTime);master.gain.exponentialRampToValueAtTime(.72,ac.currentTime+.18);master.gain.setValueAtTime(.72,ac.currentTime+1.55);master.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+2.35);filter.connect(comp);comp.connect(master);master.connect(ac.destination);[[92,'sawtooth',.28],[184,'sine',.9],[276,'sine',.48],[368,'triangle',.24],[460,'sine',.12]].forEach(([f,type,vol])=>{const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,ac.currentTime);g.gain.value=vol;o.connect(g);g.connect(filter);o.start();o.stop(ac.currentTime+2.4)});toast('📯 '+shipName+' — FOGHORN',1800);setTimeout(()=>ac.close(),2600)}catch(e){toast('Horn unavailable in this browser')}}
-addEventListener('keydown',e=>{const k=e.key.toLowerCase();
+let cheatBuffer='';const CHEAT='the-dev-y';let cheatCooldown=0;
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(k.length===1&&/[a-z0-9-]/.test(k)&&!['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName)){cheatBuffer=(cheatBuffer+k).slice(-CHEAT.length);if(cheatBuffer===CHEAT&&S){S.money+=50000;saveGame();hud();toast('CHEAT ACCEPTED: +$50,000',3500);cheatBuffer='';}}
  if(!walkMode&&k==='h'&&!e.repeat){soundHorn();return}if(k==='m'&&!e.repeat){$('mapOverlay').style.display=$('mapOverlay').style.display==='block'?'none':'block';if($('mapOverlay').style.display==='block')drawChart('fullMap');return}
  if(walkMode){if(k==='e'&&!e.repeat){setWalkMode(false);return}keys[k]=1;if(['w','a','s','d',' '].includes(k))e.preventDefault();return}
  keys[k]=1;if(k==='e')docked?null:tryDock();if(k===' ')e.preventDefault()});
@@ -468,8 +486,7 @@ function loop(now){
  weather(dt);updateDayNight();for(let i=0;i<2;i++)physics(dt/2);updateAI(dt);updateSplash(dt);
  // visuals
  shipObj.rotation.set(S.pitch,S.yaw,S.roll,'YXZ');shipObj.position.set(S.x,S.y,S.z);
- const c=S.cargo,H=S.ship.H,ch=cl(c.t/S.ship.cap,0,1.5)*H*1.1;
- cargoMesh.visible=c.t>0.05;if(cargoMesh.visible){cargoMesh.scale.set(S.ship.W*.8,Math.max(.1,ch),S.ship.L*.38);cargoMesh.position.set(0,H+ch/2,S.ship.L*.08);cargoMesh.material.color.setHex(CCOL[c.type])}
+ updateCargoBoxes();
  const d=(25+S.ship.L*.92)*camDist,ang=S.yaw+Math.PI+camYaw;
  const tx=S.x+Math.sin(ang)*d*Math.cos(camPit),tz=S.z+Math.cos(ang)*d*Math.cos(camPit);
  const sy=Math.max(S.y,-5);
@@ -485,6 +502,6 @@ function loop(now){
  R.render(scene,cam);
 }
 createAI();selectedShip=savedData?.ship??0;newGame(savedData?.money??1000,selectedShip,savedData);setupStart();
-$('beginVoyage').addEventListener('click',()=>{try{const cargo=cl(Number($('startCargo').value)||0,0,CARGO.length-1),dest=cl(Number($('startDestination').value)||0,0,PORTS.length-1);shipName=$('shipName').value.trim()||'Sea Rover';const chosenPaint=parseInt($('shipPaint').value.slice(1),16)||0x9c3b2e;const stored=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');const cash=Math.max(0,Number(savedData?.money??stored?.money??1000));const cost=price(PORTS[0],cargo);const load=Math.min(10,Math.floor(Math.max(0,cash-5)/cost),SHIPS[selectedShip].cap);if(load<1){$('contractInfo').textContent='Not enough money to load this cargo. Choose a cheaper cargo or earn money from a delivery.';return}newGame(cash,selectedShip,savedData);S.paint=chosenPaint;buildShip(S.ship);S.money-=load*cost;S.cargo={t:load,type:cargo,cost:load*cost};contract={cargo,dest,active:true};$('startScreen').style.display='none';$('hud').style.display='block';saveGame();hud();toast('Voyage started! Deliver '+CARGO[cargo].n+' to '+PORTS[dest].n+'. '+load+' tonnes loaded.',6000)}catch(err){console.error('Start voyage failed:',err);$('contractInfo').textContent='Could not start: '+(err?.message||'unknown error')+'. Reload the page and try again.'}});
+$('beginVoyage').addEventListener('click',()=>{try{const cargo=cl(Number($('startCargo').value)||0,0,CARGO.length-1),dest=cl(Number($('startDestination').value)||0,0,PORTS.length-1);shipName=$('shipName').value.trim()||'Sea Rover';const chosenPaint=parseInt($('shipPaint').value.slice(1),16)||0x9c3b2e;const stored=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');const cash=Math.max(0,Number(stored?.money??savedData?.money??1000));const cost=price(PORTS[0],cargo);const load=Math.min(10,Math.floor(Math.max(0,cash-5)/cost),SHIPS[selectedShip].cap);if(load<1){$('contractInfo').textContent='Not enough money to load this cargo. Choose a cheaper cargo or earn money from a delivery.';return}newGame(cash,selectedShip,savedData);S.paint=chosenPaint;buildShip(S.ship);S.money-=load*cost;S.cargo={t:load,type:cargo,cost:load*cost};contract={cargo,dest,active:true};$('startScreen').style.display='none';$('hud').style.display='block';saveGame();hud();toast('Voyage started! Deliver '+CARGO[cargo].n+' to '+PORTS[dest].n+'. '+load+' tonnes loaded.',6000)}catch(err){console.error('Start voyage failed:',err);$('contractInfo').textContent='Could not start: '+(err?.message||'unknown error')+'. Reload the page and try again.'}});
 requestAnimationFrame(loop);
 </script></body></html>
