@@ -32,6 +32,7 @@ button:hover{background:var(--brass);color:var(--ink)}button:focus-visible{outli
 #startCard select{background:#132b40;color:#fff;border:1px solid #617b91;padding:9px;border-radius:0}
 #startCard button.primary{background:#d9a441;color:#142333;font-weight:bold;padding:11px 20px;border-radius:0}
 #startCard .muted{color:#a9bdc9}#worldMap{width:100%;height:320px;background:#0c3c5a;border:1px solid #54738a;border-radius:0}
+#mapOverlay{position:fixed;inset:4%;z-index:15;display:none;background:rgba(5,17,29,.97);border:1px solid #d9a441;padding:14px;overflow:auto}#fullMap{width:100%;height:min(72vh,760px);background:#0c3c5a;border:1px solid #54738a}#mapOverlay button{float:right}
 #furniturePanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:8;display:none;width:min(520px,94vw);background:rgba(7,19,31,.96);border:1px solid #d9a441;border-radius:0;padding:14px}
 #furniturePanel button{margin:4px}
 </style></head><body>
@@ -44,12 +45,12 @@ button:hover{background:var(--brass);color:var(--ink)}button:focus-visible{outli
 <p id="contractInfo" class="muted"></p><h2>4 · Expanded world map</h2><canvas id="worldMap" width="1100" height="320"></canvas>
 <p id="menuBalance" style="font-size:22px;font-weight:bold;color:#f3ca72;margin:14px 0">BALANCE: $1,000</p><p class="muted">Your balance is saved locally. Buy low at one port, sail to a port that needs that cargo, and sell high.</p>
 <button class="primary" id="beginVoyage" type="button">START VOYAGE</button> <span id="saveInfo" class="muted"></span></div></div>
-<div id="furniturePanel" class="p"><h2>Ship Furnishings</h2><p>Buy and place equipment on your deck. Items are saved locally.</p><div id="furnitureChoices"></div><button id="closeFurniture">Close</button></div>
+<div id="mapOverlay"><button id="closeMap">Close map (M)</button><h2>WORLD NAVIGATION CHART</h2><canvas id="fullMap" width="1500" height="900"></canvas><p class="muted">All named ports, islands and your current position.</p></div><div id="furniturePanel" class="p"><h2>Ship Furnishings</h2><p>Buy and place equipment on your deck. Items are saved locally.</p><div id="furnitureChoices"></div><button id="closeFurniture">Close</button></div>
 <div id="hud" class="p"></div>
 <div id="side" class="p"><canvas id="map" width="220" height="130"></canvas><div id="wx"></div></div>
 <div id="warn" class="p"></div><div id="msg" class="p"></div>
 <div id="help" class="p">Ship mode: W/S throttle · D left · A right · H horn · Space stop · E dock · drag mouse to look · wheel to zoom</div>
-<button id="modeBtn" type="button">Enter First-Person Walk</button><button id="helmBtn" type="button" style="position:fixed;right:12px;bottom:102px;z-index:6;padding:9px 14px;background:#17324a;color:#fff;border:1px solid #d9a441">Drive · First Person</button><button id="hornBtn" type="button" style="position:fixed;right:12px;bottom:58px;z-index:6;padding:9px 14px;background:#17324a;color:#fff;border:1px solid #d9a441">Honk · H</button><div id="crosshair"></div><div id="walkNote">WASD move · Mouse look · Shift walk faster · E exit walk mode · Esc releases mouse</div>
+<button id="modeBtn" type="button">Enter First-Person Walk</button><button id="mapBtn" type="button" style="position:fixed;right:12px;bottom:150px;z-index:6;padding:9px 14px;background:#17324a;color:#fff;border:1px solid #d9a441">World Map · M</button><button id="helmBtn" type="button" style="position:fixed;right:12px;bottom:102px;z-index:6;padding:9px 14px;background:#17324a;color:#fff;border:1px solid #d9a441">Drive · First Person</button><button id="hornBtn" type="button" style="position:fixed;right:12px;bottom:58px;z-index:6;padding:9px 14px;background:#17324a;color:#fff;border:1px solid #d9a441">Honk · H</button><div id="crosshair"></div><div id="walkNote">WASD move · Mouse look · Shift walk faster · E exit walk mode · Esc releases mouse</div>
 <div id="port" class="p"></div><div id="over" class="p"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -103,19 +104,19 @@ sun.shadow.camera.top=180;sun.shadow.camera.bottom=-180;
 scene.add(hemi,sun);
 const ambient=new THREE.AmbientLight(0x7899b2,.22);scene.add(ambient);
 const moon=new THREE.DirectionalLight(0x789bd1,.0);moon.position.set(180,180,-120);scene.add(moon);let nightMix=0;const shipNavLights=[];
-const SEG=210,SIZE=1000,og=new THREE.PlaneGeometry(SIZE,SIZE,SEG,SEG);og.rotateX(-Math.PI/2);
+const SEG=260,SIZE=1000,og=new THREE.PlaneGeometry(SIZE,SIZE,SEG,SEG);og.rotateX(-Math.PI/2);
 og.setAttribute('color',new THREE.BufferAttribute(new Float32Array(og.attributes.position.count*3),3));
 const ocean=new THREE.Mesh(og,new THREE.MeshStandardMaterial({
- vertexColors:true,roughness:.24,metalness:.22,
+ vertexColors:true,roughness:.12,metalness:.32,
  envMapIntensity:1.15
 }));
 ocean.receiveShadow=true;scene.add(ocean);
-const step=SIZE/SEG, base=new THREE.Color(0x1a6aa0), deep=new THREE.Color(0x0d3a5e), white=new THREE.Color(0xe8f4f8), tmp=new THREE.Color();
+const step=SIZE/SEG, base=new THREE.Color(0x2589b8), deep=new THREE.Color(0x062b4b), white=new THREE.Color(0xf4fbff), foam=new THREE.Color(0xb9e8f2), tmp=new THREE.Color();
 function updateOcean(cx,cz){
  const ox=Math.round(cx/step)*step, oz=Math.round(cz/step)*step, P=og.attributes.position, C=og.attributes.color;
  ocean.position.set(ox,0,oz);
  for(let i=0;i<P.count;i++){const x=P.getX(i)+ox,z=P.getZ(i)+oz,A=ampAt(x,z),h=waveH(x,z,A);P.setY(i,h);
-  tmp.copy(deep).lerp(base,cl(.5+h/(A*1.6+.5),0,1)).lerp(white,sm(.55,.95,h/(A*1.2+.3))*(A>.6?1:A/.6));C.setXYZ(i,tmp.r,tmp.g,tmp.b)}
+  const crest=sm(.72,.98,h/(A*1.35+.25))*cl(A*.8,0,1);tmp.copy(deep).lerp(base,cl(.48+h/(A*1.7+.5),0,1)).lerp(foam,crest*.48).lerp(white,sm(.9,1.12,h/(A*1.2+.3))*crest*.55);C.setXYZ(i,tmp.r,tmp.g,tmp.b)}
  P.needsUpdate=C.needsUpdate=true;og.computeVertexNormals();
 }
 // land
@@ -124,8 +125,11 @@ function addIsland(i,port){
  const sand=new THREE.Mesh(new THREE.CylinderGeometry(i.r*1.03,i.r*1.13,2.5,40),mat(0xd8c58f));sand.position.set(i.x,-.5,i.z);scene.add(sand);
  const baseLand=new THREE.Mesh(new THREE.ConeGeometry(i.r,i.r*.58,40,5),mat(0x526f42));baseLand.position.set(i.x,i.r*.22,i.z);baseLand.castShadow=true;baseLand.receiveShadow=true;scene.add(baseLand);
  const crown=new THREE.Mesh(new THREE.ConeGeometry(i.r*.62,i.r*.38,32,4),mat(0x789653));crown.position.set(i.x,i.r*.46,i.z);crown.castShadow=true;scene.add(crown);
- for(let k=0;k<Math.max(5,Math.floor(i.r/7));k++){const a=k*2.399,rr=i.r*(.18+(k%4)*.13),x=i.x+Math.cos(a)*rr,z=i.z+Math.sin(a)*rr;const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(1+((k*7)%5)*.35,0),mat(k%2?0x777b72:0x555f55));rock.position.set(x,.5,z);rock.scale.set(1.4,1+((k%3)*.4),1.2);rock.castShadow=true;scene.add(rock);
-  if(k%2===0&&!port){const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.35,.55,4.5,7),mat(0x725033));trunk.position.set(x,3,z);trunk.castShadow=true;scene.add(trunk);const leaves=new THREE.Mesh(new THREE.SphereGeometry(2.8,8,6),mat(k%4?0x3d7848:0x568b4c));leaves.position.set(x,5.7,z);leaves.scale.y=.62;leaves.castShadow=true;scene.add(leaves)}}
+ for(let k=0;k<Math.max(9,Math.floor(i.r/3.8));k++){const a=k*2.399,rr=i.r*(.16+(k%6)*.115),x=i.x+Math.cos(a)*rr,z=i.z+Math.sin(a)*rr;const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(1+((k*7)%5)*.42,1),mat(k%3?0x777b72:0x555f55));rock.position.set(x,.5,z);rock.scale.set(1.5,1.1+((k%3)*.45),1.3);rock.castShadow=true;scene.add(rock);
+  if(k%3===0&&!port){const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.24,.42,4.8,8),mat(0x725033));trunk.position.set(x,3,z);trunk.castShadow=true;scene.add(trunk);const leaves=new THREE.Mesh(new THREE.SphereGeometry(2.7,10,8),mat(k%2?0x326b43:0x568b4c));leaves.position.set(x,5.8,z);leaves.scale.set(1.15,.7,1.05);leaves.castShadow=true;scene.add(leaves);for(let f=0;f<4;f++){const frond=new THREE.Mesh(new THREE.ConeGeometry(.42,3.4,5),mat(0x477b43));frond.position.set(x+Math.cos(f*Math.PI/2)*1.8,6.2,z+Math.sin(f*Math.PI/2)*1.8);frond.rotation.z=-.8;scene.add(frond)}}
+  if(k%4===1){const bush=new THREE.Mesh(new THREE.DodecahedronGeometry(1.8,1),mat(0x426d3e));bush.position.set(x,1.8,z);bush.scale.set(1.4,.8,1.1);scene.add(bush)}}
+ // pale broken reef rocks around the shore
+ for(let q=0;q<18;q++){const a=q*Math.PI*2/18,rr=i.r*.94,reef=new THREE.Mesh(new THREE.DodecahedronGeometry(1.2,0),mat(q%2?0x8b9a91:0x667e80));reef.position.set(i.x+Math.cos(a)*rr,.1,i.z+Math.sin(a)*rr);reef.scale.set(1.8,.45,1.2);scene.add(reef)}
  if(port){const a=Math.atan2(port.dx,port.dz);const pier=new THREE.Mesh(new THREE.BoxGeometry(5,1.2,26),mat(0x6b4a2b));pier.position.set(port.x+port.dx*(i.r+3),1,port.z+port.dz*(i.r+3));pier.rotation.y=a;scene.add(pier);
   const hut=new THREE.Mesh(new THREE.BoxGeometry(10,7,10),mat(0xb0b8c0));hut.position.set(port.x+port.dx*(i.r*.6),5,port.z+port.dz*(i.r*.6));scene.add(hut);
   const beam=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,90,8),new THREE.MeshBasicMaterial({color:0xd9a441,transparent:true,opacity:.45}));beam.position.set(port.bx,45,port.bz);scene.add(beam);
@@ -164,22 +168,35 @@ function buildShip(s){
  add(new THREE.BoxGeometry(W*.94,.32,.24),whiteMat,0,H+.16,L*.29);
  add(new THREE.BoxGeometry(W*.94,.32,.24),whiteMat,0,H+.16,-L*.43);
 
- // Bridge block and multiple rows of bridge windows.
- const bridgeZ=-L*.34;
- add(new THREE.BoxGeometry(W*.68,H*.86,L*.19),whiteMat,0,H*1.42,bridgeZ);
+ // Walk-through bridge cabin: solid side/rear walls, open central aft doorway,
+ // and a wide uninterrupted forward glass screen for a clear 180-degree sea view.
+ const bridgeZ=-L*.34, cabinHalfX=W*.34, cabinHalfZ=L*.095, wallH=H*.78, wallY=H*1.42;
+ add(new THREE.BoxGeometry(W*.68,.14,L*.19),deckMat,0,H*1.02,bridgeZ);
+ add(new THREE.BoxGeometry(.16,wallH,L*.19),whiteMat,-cabinHalfX,wallY,bridgeZ);
+ add(new THREE.BoxGeometry(.16,wallH,L*.19),whiteMat,cabinHalfX,wallY,bridgeZ);
+ // Aft wall has a real doorway; door is hinged open against the right jamb.
+ add(new THREE.BoxGeometry(W*.22,wallH,.16),whiteMat,-W*.23,wallY,bridgeZ+cabinHalfZ);
+ add(new THREE.BoxGeometry(W*.22,wallH,.16),whiteMat,W*.23,wallY,bridgeZ+cabinHalfZ);
+ add(new THREE.BoxGeometry(W*.24,.16,.16),whiteMat,0,H*1.82,bridgeZ+cabinHalfZ);
+ const door=add(new THREE.BoxGeometry(W*.24,wallH*.94,.12),paint(0x76543a,.72),W*.12,wallY,bridgeZ+cabinHalfZ-.12);door.rotation.y=Math.PI/2;
+ // Forward panoramic glass, with slim edge frames only (no central mast/pillars).
+ const panoMat=new THREE.MeshPhysicalMaterial({color:0x8fd8ed,transparent:true,opacity:.24,roughness:.08,metalness:.08,side:THREE.DoubleSide,depthWrite:false});
+ add(new THREE.BoxGeometry(W*.66,wallH*.88,.055),panoMat,0,wallY,bridgeZ-cabinHalfZ);
+ add(new THREE.BoxGeometry(.13,wallH,.12),darkMat,-cabinHalfX,wallY,bridgeZ-cabinHalfZ);
+ add(new THREE.BoxGeometry(.13,wallH,.12),darkMat,cabinHalfX,wallY,bridgeZ-cabinHalfZ);
  add(new THREE.BoxGeometry(W*.72,.16,L*.22),darkMat,0,H*1.88,bridgeZ);
- for(let i=-2;i<=2;i++){
-   add(new THREE.BoxGeometry(W*.105,H*.22,.035),glassMat,i*W*.12,H*1.62,bridgeZ+L*.096);
- }
+ // Console kept low so it never blocks the forward horizon.
+ add(new THREE.BoxGeometry(W*.44,H*.18,.55),darkMat,0,H*1.16,bridgeZ-L*.025);
+ for(let q=-2;q<=2;q++){const dial=add(new THREE.BoxGeometry(.28,.12,.035),brassMat,q*W*.075,H*1.2,bridgeZ-L*.025-.28);}
  add(new THREE.BoxGeometry(W*.72,.12,L*.20),whiteMat,0,H*1.98,bridgeZ);
- const funnel=add(new THREE.CylinderGeometry(W*.105,W*.13,H*.65,16),redMat,0,H*2.3,bridgeZ-L*.025);
- add(new THREE.CylinderGeometry(W*.11,W*.11,.12,16),darkMat,0,H*2.63,bridgeZ-L*.025);
-
- // Mast, antennae and navigation lights.
- add(new THREE.CylinderGeometry(.07,.11,H*1.15,8),brassMat,0,H*2.55,bridgeZ+L*.03);
- add(new THREE.BoxGeometry(W*.55,.07,.07),brassMat,0,H*2.92,bridgeZ+L*.03);
+ // Funnel and antenna moved aft of the bridge sightline.
+ const funnelZ=bridgeZ+L*.20;
+ add(new THREE.CylinderGeometry(W*.105,W*.13,H*.65,16),redMat,0,H*2.3,funnelZ);
+ add(new THREE.CylinderGeometry(W*.11,W*.11,.12,16),darkMat,0,H*2.63,funnelZ);
+ add(new THREE.CylinderGeometry(.07,.11,H*1.15,8),brassMat,0,H*2.55,bridgeZ+L*.25);
+ add(new THREE.BoxGeometry(W*.55,.07,.07),brassMat,0,H*2.92,bridgeZ+L*.25);
  const lampMat=new THREE.MeshBasicMaterial({color:0xffd66b});
- add(new THREE.SphereGeometry(.16,10,8),lampMat,0,H*3.0,bridgeZ+L*.03);
+ add(new THREE.SphereGeometry(.16,10,8),lampMat,0,H*3.0,bridgeZ+L*.25);
  const navRed=new THREE.PointLight(0xff2535,0,35),navGreen=new THREE.PointLight(0x24ff76,0,35),deckLamp=new THREE.PointLight(0xffd38a,0,48);navRed.position.set(-W*.52,H*1.1,0);navGreen.position.set(W*.52,H*1.1,0);deckLamp.position.set(0,H*3.1,bridgeZ);shipObj.add(navRed,navGreen,deckLamp);shipNavLights.push(navRed,navGreen,deckLamp);
 
  // Deck cargo: neat rows of individually shaded shipping containers.
@@ -232,7 +249,7 @@ let ownedShips=[0],placedFurniture=[],furnitureGroup=new THREE.Group(),aiShips=[
 function saveGame(){if(!S)return;const d={money:S.money,ship:SHIPS.indexOf(S.ship),shipName,paint:S.paint,x:S.x,z:S.z,yaw:S.yaw,hull:S.hull,water:S.water,cargo:S.cargo,ownedShips,placedFurniture,contract};try{localStorage.setItem(SAVE_KEY,JSON.stringify(d));$('saveInfo').textContent='Saved on this device'}catch(e){}}
 function loadGame(){try{const d=JSON.parse(localStorage.getItem(SAVE_KEY)||localStorage.getItem('captainsLedgerSaveV3')||'null');if(!d)return null;ownedShips=Array.isArray(d.ownedShips)?d.ownedShips:[0];placedFurniture=Array.isArray(d.placedFurniture)?d.placedFurniture:[];contract=d.contract||contract;shipName=d.shipName||'Sea Rover';return d}catch(e){return null}}
 let savedData=loadGame();
-function drawWorldMap(){const c=$('worldMap'),x=c.getContext('2d'),w=c.width,h=c.height;x.fillStyle='#0c3c5a';x.fillRect(0,0,w,h);x.strokeStyle='#37657d';for(let a=0;a<w;a+=42){x.beginPath();x.moveTo(a,0);x.lineTo(a,h);x.stroke()}const X=v=>(v+1250)/2550*w,Z=v=>(v+800)/1650*h;x.fillStyle='#718b56';ISL.forEach(q=>{x.beginPath();x.arc(X(q.x),Z(q.z),q.r/4,0,7);x.fill()});PORTS.forEach(q=>{x.fillStyle='#f4c66d';x.beginPath();x.arc(X(q.x),Z(q.z),5,0,7);x.fill();x.font='bold 13px Georgia';x.fillStyle='#fff0c7';x.strokeStyle='#082033';x.lineWidth=3;x.strokeText(q.n,X(q.x)+8,Z(q.z)-7);x.fillText(q.n,X(q.x)+8,Z(q.z)-7)})}
+function drawChart(id){const c=$(id),x=c.getContext('2d'),w=c.width,h=c.height;x.fillStyle='#0b3550';x.fillRect(0,0,w,h);x.strokeStyle='rgba(130,190,210,.17)';for(let a=0;a<w;a+=Math.max(35,w/28)){x.beginPath();x.moveTo(a,0);x.lineTo(a,h);x.stroke()}for(let a=0;a<h;a+=Math.max(35,h/18)){x.beginPath();x.moveTo(0,a);x.lineTo(w,a);x.stroke()}const X=v=>(v+1250)/2550*w,Z=v=>(v+800)/1650*h;x.fillStyle='#718b56';ISL.forEach(q=>{x.beginPath();x.arc(X(q.x),Z(q.z),Math.max(5,q.r/4*w/1100),0,7);x.fill()});PORTS.forEach((q,i)=>{x.fillStyle='#f4c66d';x.beginPath();x.arc(X(q.x),Z(q.z),Math.max(5,w/220),0,7);x.fill();x.font=`bold ${Math.max(12,w/85)}px Georgia`;x.fillStyle='#fff0c7';x.strokeStyle='#082033';x.lineWidth=Math.max(2,w/500);x.strokeText(q.n,X(q.x)+9,Z(q.z)-8);x.fillText(q.n,X(q.x)+9,Z(q.z)-8)});if(S){x.fillStyle='#fff';x.beginPath();x.arc(X(S.x),Z(S.z),Math.max(5,w/180),0,7);x.fill();x.font=`bold ${Math.max(12,w/90)}px Georgia`;x.fillText('YOU',X(S.x)+10,Z(S.z)+20)}}function drawWorldMap(){drawChart('worldMap');if($('mapOverlay').style.display==='block')drawChart('fullMap')}
 function saveMenu(){try{localStorage.setItem(SAVE_KEY,JSON.stringify({money:savedData?.money??1000,ship:selectedShip,shipName,paint:parseInt(($('shipPaint')?.value||'#9c3b2e').slice(1),16),ownedShips,placedFurniture,contract}))}catch(e){}}
 function setupStart(){const box=$('shipChoices');box.innerHTML='';SHIPS.forEach((sh,i)=>{const own=ownedShips.includes(i),b=document.createElement('button');b.className='choice'+(i===selectedShip?' selected':'');b.innerHTML=`<strong>${sh.n}</strong>${sh.cap} t capacity · ${sh.spd} m/s<br><small>${own?'Owned · Ready':'Buy for $'+sh.cost.toLocaleString()}</small>`;b.onclick=()=>{if(!own){const cash=savedData?.money??1000;if(cash<sh.cost){$('contractInfo').textContent='Not enough money for this ship yet.';return}if(!confirm('Buy '+sh.n+' for $'+sh.cost+'?'))return;savedData=savedData||{money:1000};savedData.money-=sh.cost;ownedShips.push(i);saveMenu()}selectedShip=i;setupStart()};box.appendChild(b)});
  $('shipName').value=shipName;$('shipPaint').value='#'+((S?.paint??SHIPS[selectedShip].col).toString(16).padStart(6,'0'));$('startCargo').innerHTML=CARGO.map((c,i)=>`<option value="${i}">${c.n} · $${c.p}/t</option>`).join('');$('startDestination').innerHTML=PORTS.map((p,i)=>`<option value="${i}">${p.n}</option>`).join('');$('startCargo').value=contract.cargo;$('startDestination').value=contract.dest;
@@ -325,7 +342,7 @@ function showOver(){const lost=Math.round(S.money*.05);const o=$('over');o.style
  o.innerHTML=`<h2>${S.state==='sunk'?'Your ship sank':'Your ship capsized'}</h2><p>The cargo and the vessel are gone, and the insurers charge you ${'$'+lost.toLocaleString()}. You start over with a Coaster in Marlow.</p><button id="again">Take command again</button>`;
  $('again').onclick=()=>newGame(Math.max(600,S.money-lost))}
 /* ---------- 4-minute day/night cycle ---------- */
-function updateDayNight(){const phase=(T%240)/240*Math.PI*2-Math.PI/2;const daylight=cl((Math.sin(phase)+.12)/.82,0,1);nightMix=1-daylight;sun.position.set(Math.cos(phase)*260,Math.max(18,Math.sin(phase)*300),Math.sin(phase)*180);sun.intensity=.12+daylight*2.15;sun.color.set(daylight>.25?0xffe4bf:0x8ca9dc);hemi.intensity=.18+daylight*.95;moon.intensity=nightMix*.48;ambient.intensity=.12+daylight*.2;const sky=new THREE.Color(0x081526).lerp(new THREE.Color(0x8cc0e8),daylight);if(daylight<.25)sky.lerp(new THREE.Color(0xd17b55),sm(0,.25,daylight)*.35);scene.background=sky;scene.fog.color.copy(sky);scene.fog.far=900-nightMix*170;shipNavLights.forEach(l=>l.intensity=nightMix*2.2)}
+function updateDayNight(){const phase=(T%360)/360*Math.PI*2-Math.PI/2;const sunY=Math.sin(phase),daylight=cl((sunY+.08)/.82,0,1),dusk=1-sm(.04,.48,Math.abs(sunY));nightMix=1-daylight;const warm=cl(dusk*(1-nightMix*.35),0,1);sun.position.set(Math.cos(phase)*260,Math.max(12,sunY*300),Math.sin(phase)*180);sun.intensity=.08+daylight*2.35+warm*.45;const sunCol=new THREE.Color(0xffe7c2).lerp(new THREE.Color(0xff8b4d),warm*.88);if(nightMix>.55)sunCol.lerp(new THREE.Color(0x91b7ed),nightMix*.7);sun.color.copy(sunCol);hemi.intensity=.14+daylight*.95;moon.intensity=nightMix*.55;ambient.intensity=.10+daylight*.22;const sky=new THREE.Color(0x07152b).lerp(new THREE.Color(0x8cc9ed),daylight);sky.lerp(new THREE.Color(0xff995f),warm*.48);if(nightMix>.25)sky.lerp(new THREE.Color(0x17264b),nightMix*.5);scene.background=sky;scene.fog.color.copy(sky);scene.fog.far=950-nightMix*180;shipNavLights.forEach(l=>l.intensity=nightMix*2.4)}
 /* ---------- weather ---------- */
 function weather(dt){
  wxTimer-=dt;
@@ -384,7 +401,7 @@ function hud(){
   if(S.water>s.cap*.15)t='⚠ FLOODING — '+S.water.toFixed(0)+' t of water aboard';if(Math.abs(S.roll)>.7)t='⚠ DANGEROUS HEEL — ease speed and turn into the swell'}
  w.style.display=t?'block':'none';w.textContent=t;
  const A=ampAt(S.x,S.z),sea=danger(S.x),zone=S.x<-400?'Still Lagoon':S.x>400?'Raging Deep':'Open Sea';
- $('wx').innerHTML=`${WX[Math.round(wxLevel)]} · ${zone}<br>wave height ≈ ${(A*1.4*2).toFixed(1)} m · next: ${WX[wxNext]} in ${Math.max(0,Math.round(wxTimer))}s`;
+ $('wx').innerHTML=`${WX[Math.round(wxLevel)]} · ${zone}<br>wave height ≈ ${(A*1.4*2).toFixed(1)} m · next: ${WX[wxNext]} in ${Math.max(0,Math.round(wxTimer))}s<br><span style="color:#f3ca72">M · World map / all 5 ports</span>`;
  mc.clearRect(0,0,220,130);mc.fillStyle='#1c5b86';mc.fillRect(0,0,220,130);
  mc.fillStyle='#14405f';mc.fillRect(0,0,MX(-400),130);mc.fillStyle='#3a1f2c';mc.fillRect(MX(400),0,220,130);
  mc.fillStyle='#6d8b4a';for(const l of [...ISL,...PORTS]){mc.beginPath();mc.arc(MX(l.x),MZ(l.z),l.r/10,0,7);mc.fill()}
@@ -403,17 +420,17 @@ function setWalkMode(on){
  if(on)helmMode=false;
  if(on&&docked){toast('Set sail before walking around the deck.');return}
  walkMode=!!on;keys.w=keys.a=keys.s=keys.d=keys.shift=0;
- if(walkMode){walkX=0;walkZ=-S.ship.L*.39;walkYaw=0;walkPitch=0;camDist=1;}
+ if(walkMode){walkX=0;walkZ=S.ship.L*.10;walkYaw=0;walkPitch=0;camDist=1;}
  else if(document.pointerLockElement=== $('c'))document.exitPointerLock();
  updateWalkUI();
 }
 $('modeBtn').addEventListener('click',()=>setWalkMode(!walkMode));
-$('helmBtn').addEventListener('click',()=>{walkMode=false;helmMode=!helmMode;keys.w=keys.a=keys.s=keys.d=0;if(document.pointerLockElement===$('c'))document.exitPointerLock();updateWalkUI();});
-$('hornBtn').addEventListener('click',soundHorn);
+$('helmBtn').addEventListener('click',()=>{walkMode=false;helmMode=!helmMode;camYaw=0;camPit=.55;keys.w=keys.a=keys.s=keys.d=0;if(document.pointerLockElement===$('c'))document.exitPointerLock();updateWalkUI();});
+$('hornBtn').addEventListener('click',soundHorn);$('mapBtn').addEventListener('click',()=>{drawChart('fullMap');$('mapOverlay').style.display='block'});$('closeMap').addEventListener('click',()=>{$('mapOverlay').style.display='none'});
 $('c').addEventListener('click',()=>{if(walkMode&&document.pointerLockElement!==$('c'))$('c').requestPointerLock?.()});
-function soundHorn(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;const ac=new AC(),master=ac.createGain(),filter=ac.createBiquadFilter();filter.type='lowpass';filter.frequency.setValueAtTime(430,ac.currentTime);filter.Q.value=.55;master.gain.setValueAtTime(.0001,ac.currentTime);master.gain.exponentialRampToValueAtTime(.2,ac.currentTime+.22);master.gain.setValueAtTime(.2,ac.currentTime+1.55);master.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+2.25);filter.connect(master);master.connect(ac.destination);[[55,'triangle',.22],[110,'sine',.8],[147,'sine',.68],[220,'triangle',.12]].forEach(([f,type,vol])=>{const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,ac.currentTime);g.gain.value=vol;o.connect(g);g.connect(filter);o.start();o.stop(ac.currentTime+2.3)});toast('📯 '+shipName+' — FOGHORN',1800);setTimeout(()=>ac.close(),2500)}catch(e){toast('Horn unavailable in this browser')}}
+function soundHorn(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;const ac=new AC(),master=ac.createGain(),filter=ac.createBiquadFilter(),comp=ac.createDynamicsCompressor();filter.type='lowpass';filter.frequency.setValueAtTime(1050,ac.currentTime);filter.Q.value=.35;comp.threshold.value=-18;comp.knee.value=12;comp.ratio.value=5;comp.attack.value=.015;comp.release.value=.35;master.gain.setValueAtTime(.0001,ac.currentTime);master.gain.exponentialRampToValueAtTime(.72,ac.currentTime+.18);master.gain.setValueAtTime(.72,ac.currentTime+1.55);master.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+2.35);filter.connect(comp);comp.connect(master);master.connect(ac.destination);[[92,'sawtooth',.28],[184,'sine',.9],[276,'sine',.48],[368,'triangle',.24],[460,'sine',.12]].forEach(([f,type,vol])=>{const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,ac.currentTime);g.gain.value=vol;o.connect(g);g.connect(filter);o.start();o.stop(ac.currentTime+2.4)});toast('📯 '+shipName+' — FOGHORN',1800);setTimeout(()=>ac.close(),2600)}catch(e){toast('Horn unavailable in this browser')}}
 addEventListener('keydown',e=>{const k=e.key.toLowerCase();
- if(!walkMode&&k==='h'&&!e.repeat){soundHorn();return}
+ if(!walkMode&&k==='h'&&!e.repeat){soundHorn();return}if(k==='m'&&!e.repeat){$('mapOverlay').style.display=$('mapOverlay').style.display==='block'?'none':'block';if($('mapOverlay').style.display==='block')drawChart('fullMap');return}
  if(walkMode){if(k==='e'&&!e.repeat){setWalkMode(false);return}keys[k]=1;if(['w','a','s','d',' '].includes(k))e.preventDefault();return}
  keys[k]=1;if(k==='e')docked?null:tryDock();if(k===' ')e.preventDefault()});
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0);
@@ -423,11 +440,19 @@ addEventListener('wheel',e=>{if(!walkMode)camDist=cl(camDist*(1+e.deltaY*.001),.
 function updateFirstPerson(dt){
  // Keep the player on the open deck and inside the ship's railings.
  const s=S.ship,step=keys.shift?9:4.8;
- let forward=(keys.w?1:0)-(keys.s?1:0),side=(keys.a?1:0)-(keys.d?1:0);
+ let forward=(keys.w?1:0)-(keys.s?1:0),side=(keys.d?1:0)-(keys.a?1:0);
  const len=Math.hypot(forward,side)||1;forward/=len;side/=len;
- walkX+=Math.cos(walkYaw)*side*step*dt+Math.sin(walkYaw)*forward*step*dt;
- walkZ+=Math.sin(walkYaw)*side*step*dt+Math.cos(walkYaw)*forward*step*dt;
- walkX=cl(walkX,-s.W*.43,s.W*.43);walkZ=cl(walkZ,-s.L*.46,s.L*.46);
+ const oldX=walkX,oldZ=walkZ;let nx=walkX+Math.cos(walkYaw)*side*step*dt-Math.sin(walkYaw)*forward*step*dt;
+ let nz=walkZ-Math.sin(walkYaw)*side*step*dt-Math.cos(walkYaw)*forward*step*dt;
+ nx=cl(nx,-s.W*.43,s.W*.43);nz=cl(nz,-s.L*.46,s.L*.46);
+ // Cabin footprint has collision walls. The only passage is the marked aft doorway.
+ const cz=-s.L*.34,hx=s.W*.34,hz=s.L*.095,inside=(x,z)=>Math.abs(x)<hx-.18&&Math.abs(z-cz)<hz-.18;
+ const wasIn=inside(oldX,oldZ),willIn=inside(nx,nz),doorX=s.W*.13,doorZ=cz+hz;
+ if(willIn&&!wasIn){const throughDoor=Math.abs(nx)<doorX&&oldZ>=doorZ-.45&&nz<doorZ+.2;if(!throughDoor){nx=oldX;nz=oldZ}}
+ if(wasIn&&!willIn){const throughDoor=Math.abs(nx)<doorX&&oldZ<=doorZ+.45&&nz>doorZ-.2;if(!throughDoor){nx=oldX;nz=oldZ}}
+ // Side and forward walls cannot be walked through.
+ if(!wasIn&&!willIn){const crossedSide=Math.abs(oldX)<hx&&Math.abs(nx)>=hx&&Math.abs(nz-cz)<hz;if(crossedSide){nx=oldX;nz=oldZ}}
+ walkX=nx;walkZ=nz;
  // A simple deck-level camera follows the ship's pitch, roll, and movement.
  shipObj.updateMatrixWorld(true);
  walkLocal.set(walkX,s.H+1.65,walkZ);walkWorld.copy(walkLocal).applyMatrix4(shipObj.matrixWorld);
@@ -435,7 +460,7 @@ function updateFirstPerson(dt){
  const lookQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(walkPitch,walkYaw,0,'YXZ'));
  cam.position.copy(walkWorld);cam.quaternion.copy(shipQ).multiply(lookQ);
 }
-function updateHelmCamera(){shipObj.updateMatrixWorld(true);const bridgeZ=-S.ship.L*.24;walkLocal.set(0,S.ship.H*2.05,bridgeZ+S.ship.L*.035);walkWorld.copy(walkLocal).applyMatrix4(shipObj.matrixWorld);cam.position.copy(walkWorld);cam.quaternion.setFromRotationMatrix(new THREE.Matrix4().extractRotation(shipObj.matrixWorld));cam.position.y+=Math.sin(T*1.25)*.035+S.speed*.002;cam.fov=72;cam.updateProjectionMatrix()}
+function updateHelmCamera(){shipObj.updateMatrixWorld(true);const bridgeZ=-S.ship.L*.34;walkLocal.set(0,S.ship.H*1.52,bridgeZ+S.ship.L*.015);walkWorld.copy(walkLocal).applyMatrix4(shipObj.matrixWorld);cam.position.copy(walkWorld);const shipQ=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().extractRotation(shipObj.matrixWorld));const helmLook=new THREE.Quaternion().setFromEuler(new THREE.Euler(cl(camPit-.55,-.9,.9),cl(camYaw,-Math.PI/2,Math.PI/2),0,'YXZ'));cam.quaternion.copy(shipQ).multiply(helmLook);cam.position.y+=Math.sin(T*1.25)*.035+S.speed*.002;cam.fov=100;cam.updateProjectionMatrix()}
 function resize(){R.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}addEventListener('resize',resize);resize();
 let last=performance.now(),hudT=0;
 function loop(now){
