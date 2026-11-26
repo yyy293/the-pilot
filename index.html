@@ -63,7 +63,68 @@ function fullscreen(){let p=document.documentElement;if(!document.fullscreenElem
 $('start').onclick=()=>{if(!owned.has(selected)){showToast('Purchase this aircraft before flying');return;}started=true;paused=false;plane.position.set(0,3,0);speed=0;altitude=0;missionStage=0;refreshOps();$('overlay').classList.add('hidden');$('pause').style.display='none';$('hud').classList.remove('hidden');fullscreen();showToast('FLIGHT SYSTEMS ONLINE');};$('resume').onclick=()=>{paused=false;$('pause').style.display='none';fullscreen();};$('back').onclick=()=>{$('pause').style.display='none';$('overlay').classList.remove('hidden');$('hud').classList.add('hidden');document.exitPointerLock?.();};
 document.addEventListener('pointerlockchange',()=>{if(started&&!document.pointerLockElement&&!paused){paused=true;$('pause').style.display='flex';}});document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyP'&&started){autopilot=!autopilot;$('apTag').textContent=autopilot?'AUTOPILOT ON':'AUTOPILOT OFF';showToast(autopilot?'AUTOPILOT ENGAGED':'AUTOPILOT DISENGAGED');}if(e.code==='KeyV')third=!third;if(e.code==='KeyG')gear=!gear;if(e.code==='KeyC'){walking=!walking;showToast(walking?'CABIN WALK MODE':'PILOT SEAT');}if(e.code==='KeyL'){lightsOn=!lightsOn;showToast(lightsOn?'EXTERIOR LIGHTS ON':'EXTERIOR LIGHTS OFF');}if(e.code==='KeyK'){cabinOn=!cabinOn;showToast(cabinOn?'CABIN LIGHTS ON':'CABIN LIGHTS OFF');}if(e.code==='KeyF'){if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();else document.exitFullscreen?.();}if(e.code==='Escape'&&started){paused=true;$('pause').style.display='flex';}});document.addEventListener('keyup',e=>keys[e.code]=false);document.addEventListener('mousemove',e=>{if(document.pointerLockElement&&!autopilot){heading-=e.movementX*.00055;pitch-=e.movementY*.00045;pitch=Math.max(-1.15,Math.min(1.15,pitch));}});window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 const clock=new THREE.Clock();function update(dt){if(!started||paused)return;elapsed+=dt;if(keys.ShiftLeft||keys.ShiftRight)throttle=Math.min(1,throttle+dt*.22);if(keys.ControlLeft||keys.ControlRight)throttle=Math.max(0,throttle-dt*.22);if(!autopilot&&!walking){let pRate=1.05,rRate=1.25;if(keys.KeyW)pitch=Math.min(1.15,pitch+dt*pRate);if(keys.KeyS)pitch=Math.max(-1.15,pitch-dt*pRate);if(keys.KeyA)roll=Math.min(1.25,roll+dt*rRate);if(keys.KeyD)roll=Math.max(-1.25,roll-dt*rRate);if(keys.KeyQ)heading+=dt*.6;if(keys.KeyE)heading-=dt*.6;}else{roll*=Math.max(0,1-dt*2.2);pitch+=(Math.max(-.05,Math.min(.05,(.35-altitude/100000)*.08))-pitch)*Math.min(1,dt*.6);}
-let a=aircraft[selected];let onGround=altitude<2;if(onGround){if(keys.KeyW)throttle=Math.min(1,throttle+dt*.35);if(keys.KeyS)throttle=Math.max(0,throttle-dt*.45);if(keys.KeyA)heading+=dt*.35;if(keys.KeyD)heading-=dt*.35;}let target=walking?0:(onGround?Math.min(25,throttle*60):throttle*a.max);speed+=(target-speed)*Math.min(1,dt*(a.accel/90));if(onGround&&speed<45)vertical=0;let climbFactor=Math.max(-1,Math.min(1,Math.sin(pitch)*1.4+Math.sin(roll)*.18));vertical=(speed*.9*climbFactor+(throttle-.45)*a.climb*1.6);if(speed<35)vertical-=5;altitude=Math.max(0,altitude+vertical*dt*60);if(altitude<1.5&&speed>45&&pitch>.12)altitude+=Math.max(0,(speed-45)*.006)*dt*60;let turn=Math.sin(roll)*Math.max(.15,speed/a.max)*.9;heading+=turn*dt;let forward=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));plane.position.x+=forward.x*speed*dt*1.15;plane.position.z+=forward.z*speed*dt*1.15;plane.position.y=altitude*.3048+3;cabinLight.position.copy(plane.position).add(new THREE.Vector3(0,1.2,0));cabinLight.visible=cabinOn&&(!third||walking);plane.rotation.order='YXZ';plane.rotation.y=heading;plane.rotation.x=-pitch;plane.rotation.z=-roll;
+let a=aircraft[selected];
+let onGround=altitude<2;
+const knotsToFps=1.68781;
+const gravity=32.174;
+const stallKts=Math.max(28,a.safe*.62);
+if(onGround){
+  if(keys.KeyW)throttle=Math.min(1,throttle+dt*.35);
+  if(keys.KeyS)throttle=Math.max(0,throttle-dt*.45);
+  if(keys.KeyA)heading+=dt*.35;
+  if(keys.KeyD)heading-=dt*.35;
+}
+if(!walking){
+  // Thrust accelerates the aircraft; aerodynamic drag grows with speed squared.
+  const thrustAccel=(throttle*a.accel*0.72);
+  const dragAccel=(0.0018*speed*speed)+(speed>0?0.8:0);
+  const groundTarget=throttle*58;
+  if(onGround){
+    speed=Math.max(0,speed+(thrustAccel-dragAccel)*dt);
+    if(speed<stallKts*.82){pitch*=Math.max(0,1-dt*2.4);vertical=0;}
+  }else{
+    speed=Math.max(0,speed+(thrustAccel-dragAccel)*dt);
+  }
+}else{
+  speed=Math.max(0,speed-dt*8);
+}
+const speedFps=speed*knotsToFps;
+const flightPathAngle=Math.atan2(vertical,Math.max(8,speedFps));
+const angleOfAttack=pitch-flightPathAngle;
+const stallBlend=THREE.MathUtils.clamp(speed/stallKts,0,1.6);
+const liftCoefficient=THREE.MathUtils.clamp(angleOfAttack/0.17,-0.85,1.25);
+const dynamicLift=gravity*stallBlend*stallBlend*liftCoefficient;
+const inducedDrag=Math.max(0,liftCoefficient*liftCoefficient)*0.018*speed;
+const totalDrag=0.0018*speed*speed+inducedDrag;
+if(!onGround&&!walking){
+  // Lift acts perpendicular to the airflow; banking tilts its vertical component.
+  const verticalAcceleration=dynamicLift*Math.cos(roll)-gravity;
+  vertical+=verticalAcceleration*dt;
+  // A stall removes lift and adds extra drag instead of magically holding altitude.
+  if(speed<stallKts){
+    const stallSeverity=1-speed/stallKts;
+    vertical-=gravity*stallSeverity*0.55*dt;
+    speed=Math.max(0,speed-totalDrag*stallSeverity*dt);
+  }
+  // Coordinated banked turns: more bank and more airspeed produce a faster turn.
+  const bank=Math.sin(roll);
+  const turnRate=(gravity*Math.tan(roll))/Math.max(25,speedFps);
+  heading+=turnRate*dt;
+  // Gentle pitch/roll damping prevents endless input accumulation.
+  pitch*=Math.max(0,1-dt*0.035);
+  roll*=Math.max(0,1-dt*0.025);
+}else if(onGround){
+  vertical=0;
+  // Steering is deliberately weaker at taxi speed and increases with groundspeed.
+  heading+=(keys.KeyA?1:0)-(keys.KeyD?1:0);
+  heading*=1;
+}
+altitude=Math.max(0,altitude+vertical*dt);
+if(altitude===0&&vertical<0)vertical=0;
+let forward=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));
+plane.position.x+=forward.x*speedFps*dt;
+plane.position.z+=forward.z*speedFps*dt;
+plane.position.y=altitude*.3048+3;cabinLight.position.copy(plane.position).add(new THREE.Vector3(0,1.2,0));cabinLight.visible=cabinOn&&(!third||walking);plane.rotation.order='YXZ';plane.rotation.y=heading;plane.rotation.x=-pitch;plane.rotation.z=-roll;
 // Career contracts: taxi, depart, arrive and land at a sensible speed.
 if(missionStage===0&&speed>12&&altitude<2){missionStage=1;showToast('DEPARTURE RUNWAY CLEARED');refreshOps();}if(missionStage===1&&altitude>1800){missionStage=2;showToast('DESTINATION APPROACH — REDUCE SPEED');refreshOps();}if(missionStage===2&&altitude<2&&speed<aircraft[selected].safe&&speed>8){money+=missionPay;missionStage=3;showToast('SAFE LANDING — +$'+missionPay.toLocaleString());refreshOps();}else if(missionStage===2&&altitude<2&&speed>=aircraft[selected].safe&&speed>8){let fine=Math.min(money,6000);money-=fine;missionStage=3;showToast('HARD LANDING — REPAIR COST $'+fine.toLocaleString());refreshOps();}if(missionStage===3&&speed<3){nextContract();}
 let t=$('lighting').value;let day=t==='day'?1:t==='night'?0:(Math.sin(elapsed*.018)+1)/2;let sky=new THREE.Color().setRGB(.012+day*.40,.025+day*.61,.075+day*.78);scene.background.copy(sky);scene.fog.color.copy(sky);sun.intensity=.08+day*2.1;hemi.intensity=.18+day*1.15;sun.position.set(-3000+Math.sin(elapsed*.018)*4000,4000,2000);let atmo=Math.max(0,Math.min(1,(altitude-35000)/65000));scene.fog.density=.000018*(1-atmo*.88);scene.background.lerp(new THREE.Color(0x02050d),atmo*.9);cloudGroup.visible=$('clouds').value!=='off'&&altitude<65000;cloudGroup.position.x=plane.position.x;cloudGroup.position.z=plane.position.z;cloudLayers.forEach(c=>{c.position.x+=Math.sin(elapsed*.04+c.position.z*.00001)*dt*4;c.position.z+=Math.cos(elapsed*.03+c.position.x*.00001)*dt*4;});
