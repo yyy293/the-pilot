@@ -1,17 +1,15 @@
 #include "SkyboundAircraft.h"
 
-#include "Components/StaticMeshComponent.h"
-#include "GameFramework/PlayerController.h"
 #include "Components/InputComponent.h"
+#include "Components/StaticMeshComponent.h"
 
 namespace SkyboundFlight
 {
-    // Unreal uses centimetres for distance. Aerodynamic calculations below
-    // use SI units, then convert N -> kg*cm/s^2 and N*m -> kg*cm^2/s^2.
-    constexpr float MetersToCentimeters = 100.0f;
-    constexpr float NewtonsToUnrealForce = 100.0f;
-    constexpr float NewtonMetersToUnrealTorque = 10000.0f;
-    constexpr float DegreesToRadians = PI / 180.0f;
+    // Unreal distance is centimetres; aerodynamic calculations use SI units.
+    constexpr float CmPerMeter = 100.0f;
+    constexpr float NewtonToUnrealForce = 100.0f;
+    constexpr float NewtonMeterToUnrealTorque = 10000.0f;
+    constexpr float DegToRad = PI / 180.0f;
     constexpr float MinimumAirspeed = 0.5f;
 }
 
@@ -27,7 +25,6 @@ ASkyboundAircraft::ASkyboundAircraft()
     AircraftMesh->SetLinearDamping(0.0f);
     AircraftMesh->SetAngularDamping(0.05f);
     AircraftMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
-    AircraftMesh->SetMassOverrideInKg(NAME_None, AircraftMassKg, true);
 
     AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
@@ -66,7 +63,6 @@ void ASkyboundAircraft::SetYaw(float Value)
 void ASkyboundAircraft::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
     Super::SetupPlayerInputComponent(PlayerInputComponent);
-
     check(PlayerInputComponent);
 
     PlayerInputComponent->BindAxis(TEXT("Pitch"), this, &ASkyboundAircraft::SetPitch);
@@ -90,138 +86,136 @@ void ASkyboundAircraft::Tick(float DeltaTime)
         1.0f
     );
 
+    const FVector VelocityMS =
+        AircraftMesh->GetPhysicsLinearVelocity() / SkyboundFlight::CmPerMeter;
+
+    AirspeedMetersPerSecond = VelocityMS.Size();
+    AirspeedKilometersPerHour = AirspeedMetersPerSecond * 3.6f;
+    VerticalSpeedMetersPerSecond = VelocityMS.Z;
+
+    // Unreal's rigid-body simulation already applies gravity.
+    const FVector ThrustN =
+        GetActorForwardVector() * (MaximumThrustNewtons * Throttle);
+    AircraftMesh->AddForce(ThrustN * SkyboundFlight::NewtonToUnrealForce);
+
     UpdateAerodynamics(DeltaTime);
     UpdateFlightControls(DeltaTime);
-
-    const FVector VelocityCmPerSecond = AircraftMesh->GetPhysicsLinearVelocity();
-    const FVector VelocityMetersPerSecond = VelocityCmPerSecond / SkyboundFlight::MetersToCentimeters;
-
-    AirspeedMetersPerSecond = VelocityMetersPerSecond.Size();
-    AirspeedKilometersPerHour = AirspeedMetersPerSecond * 3.6f;
-    VerticalSpeedMetersPerSecond = VelocityMetersPerSecond.Z;
-
-    const FVector WorldUp = FVector::UpVector;
-    const float AltitudeMeters = FMath::Max(0.0f, GetActorLocation().Z / SkyboundFlight::MetersToCentimeters);
-    const float Density = SeaLevelAirDensity * FMath::Exp(-AltitudeMeters / AtmosphericScaleHeightMeters);
-
-    // Thrust follows the aircraft's forward axis. This is a simplified
-    // constant-thrust piston-engine model, not a propeller blade simulation.
-    const FVector ThrustNewtons = GetActorForwardVector() * (MaximumThrustNewtons * Throttle);
-    AircraftMesh->AddForce(ThrustNewtons * SkyboundFlight::NewtonsToUnrealForce);
-
-    // Gravity is supplied by Unreal's rigid-body simulation; do not add it twice.
-    (void)WorldUp;
-    (void)Density;
 }
 
 void ASkyboundAircraft::UpdateAerodynamics(float DeltaTime)
 {
     (void)DeltaTime;
 
-    const FVector VelocityWorldCm = AircraftMesh->GetPhysicsLinearVelocity();
-    const FVector VelocityWorld = VelocityWorldCm / SkyboundFlight::MetersToCentimeters;
-    const float Speed = VelocityWorld.Size();
+    const FVector VelocityMS =
+        AircraftMesh->GetPhysicsLinearVelocity() / SkyboundFlight::CmPerMeter;
+    const float SpeedMS = VelocityMS.Size();
 
     bStalled = false;
     AngleOfAttackDegrees = 0.0f;
 
-    if (Speed < SkyboundFlight::MinimumAirspeed)
+    if (SpeedMS < SkyboundFlight::MinimumAirspeed)
     {
         return;
     }
 
-    const FTransform AircraftTransform = AircraftMesh->GetComponentTransform();
-    const FVector LocalVelocity = AircraftTransform.InverseTransformVectorNoScale(VelocityWorld);
-    const float ForwardSpeed = LocalVelocity.X;
+    const FVector LocalVelocity =
+        AircraftMesh->GetComponentTransform().InverseTransformVectorNoScale(VelocityMS);
 
-    // Angle of attack is measured from the local airflow direction.
-    const float Alpha = FMath::Atan2(-LocalVelocity.Z, FMath::Max(0.1f, ForwardSpeed));
-    AngleOfAttackDegrees = Alpha / SkyboundFlight::DegreesToRadians;
+    // Aircraft local axes: +X forward, +Y right, +Z up.
+    const float AlphaRad = FMath::Atan2(
+        -LocalVelocity.Z,
+        FMath::Max(0.1f, LocalVelocity.X)
+    );
+    AngleOfAttackDegrees = AlphaRad / SkyboundFlight::DegToRad;
 
-    const float AltitudeMeters = FMath::Max(0.0f, GetActorLocation().Z / SkyboundFlight::MetersToCentimeters);
-    const float Density = SeaLevelAirDensity * FMath::Exp(-AltitudeMeters / AtmosphericScaleHeightMeters);
-    const float DynamicPressure = 0.5f * Density * Speed * Speed;
+    const float AltitudeM =
+        FMath::Max(0.0f, GetActorLocation().Z / SkyboundFlight::CmPerMeter);
+    const float Density =
+        SeaLevelAirDensity * FMath::Exp(-AltitudeM / AtmosphericScaleHeightMeters);
+    const float DynamicPressure = 0.5f * Density * SpeedMS * SpeedMS;
 
-    const float CriticalAlpha = CriticalAngleOfAttackDegrees * SkyboundFlight::DegreesToRadians;
-    const float EffectiveAlpha = Alpha + PitchInput * ControlSurfaceLiftAuthority;
+    // Elevator input changes effective wing incidence in this first-pass model.
+    const float EffectiveAlpha = AlphaRad + PitchInput * ControlSurfaceLiftAuthority;
+    const float CriticalAlpha =
+        CriticalAngleOfAttackDegrees * SkyboundFlight::DegToRad;
+    const float AbsAlpha = FMath::Abs(EffectiveAlpha);
+    const float AlphaSign = FMath::Sign(EffectiveAlpha);
 
-    // Linear lift before stall; after the critical angle, lift smoothly
-    // decays instead of remaining unrealistically clamped at maximum.
-    const float AbsoluteAlpha = FMath::Abs(EffectiveAlpha);
-    const float Sign = FMath::Sign(EffectiveAlpha);
     float LiftCoefficient = LiftCurveSlopePerRadian * EffectiveAlpha;
 
-    if (AbsoluteAlpha > CriticalAlpha)
+    // Beyond critical AoA, lift decays and drag rises to produce a recoverable
+    // game-model stall instead of allowing unlimited lift at high pitch.
+    if (AbsAlpha > CriticalAlpha)
     {
         bStalled = true;
-        const float BeyondStall = AbsoluteAlpha - CriticalAlpha;
         const float PeakLift = LiftCurveSlopePerRadian * CriticalAlpha;
-        const float PostStallLift = PeakLift * FMath::Exp(-BeyondStall * 2.0f);
-        LiftCoefficient = Sign * PostStallLift;
+        LiftCoefficient = AlphaSign * PeakLift
+            * FMath::Exp(-(AbsAlpha - CriticalAlpha) * 2.0f);
     }
 
     LiftCoefficient = FMath::Clamp(LiftCoefficient, -1.6f, 1.6f);
 
-    // Lift points perpendicular to the relative airflow, toward the aircraft's
-    // upper side. This keeps lift direction correct during climbs and descents.
-    const FVector AirflowDirection = VelocityWorld.GetSafeNormal();
-    FVector LiftDirection = FVector::VectorPlaneProject(GetActorUpVector(), AirflowDirection).GetSafeNormal();
+    const FVector AirflowDirection = VelocityMS.GetSafeNormal();
+    FVector LiftDirection =
+        FVector::VectorPlaneProject(GetActorUpVector(), AirflowDirection).GetSafeNormal();
 
     if (LiftDirection.IsNearlyZero())
     {
-        LiftDirection = FVector::VectorPlaneProject(GetActorRightVector(), AirflowDirection).GetSafeNormal();
+        LiftDirection =
+            FVector::VectorPlaneProject(GetActorRightVector(), AirflowDirection).GetSafeNormal();
     }
 
-    const float LiftNewtons = DynamicPressure * WingAreaSquareMeters * LiftCoefficient;
-    AircraftMesh->AddForce(LiftDirection * LiftNewtons * SkyboundFlight::NewtonsToUnrealForce);
-
-    // Parasitic + induced drag. Add extra drag in the post-stall region.
-    float DragCoefficient = ZeroLiftDragCoefficient
-        + InducedDragFactor * FMath::Square(LiftCoefficient);
-
-    if (bStalled)
+    if (!LiftDirection.IsNearlyZero())
     {
-        DragCoefficient += 0.18f;
+        const float LiftN =
+            DynamicPressure * WingAreaSquareMeters * LiftCoefficient;
+        AircraftMesh->AddForce(
+            LiftDirection * LiftN * SkyboundFlight::NewtonToUnrealForce
+        );
     }
 
-    const float DragNewtons = DynamicPressure * WingAreaSquareMeters * DragCoefficient;
-    AircraftMesh->AddForce(-AirflowDirection * DragNewtons * SkyboundFlight::NewtonsToUnrealForce);
+    const float DragCoefficient =
+        ZeroLiftDragCoefficient
+        + InducedDragFactor * FMath::Square(LiftCoefficient)
+        + (bStalled ? 0.18f : 0.0f);
+
+    const float DragN =
+        DynamicPressure * WingAreaSquareMeters * DragCoefficient;
+    AircraftMesh->AddForce(
+        -AirflowDirection * DragN * SkyboundFlight::NewtonToUnrealForce
+    );
 }
 
 void ASkyboundAircraft::UpdateFlightControls(float DeltaTime)
 {
     (void)DeltaTime;
 
-    const FVector AngularVelocityWorld = AircraftMesh->GetPhysicsAngularVelocityInRadians();
     const FVector AngularVelocityLocal =
-        AircraftMesh->GetComponentTransform().InverseTransformVectorNoScale(AngularVelocityWorld);
+        AircraftMesh->GetComponentTransform().InverseTransformVectorNoScale(
+            AircraftMesh->GetPhysicsAngularVelocityInRadians()
+        );
 
-    const float Speed = AircraftMesh->GetPhysicsLinearVelocity().Size() / SkyboundFlight::MetersToCentimeters;
-    const float Authority = FMath::Clamp(Speed / 35.0f, 0.0f, 1.0f);
+    const float SpeedMS =
+        AircraftMesh->GetPhysicsLinearVelocity().Size() / SkyboundFlight::CmPerMeter;
+    const float Authority = FMath::Clamp(SpeedMS / 35.0f, 0.0f, 1.0f);
+    const float ControlScale = FMath::Max(0.12f, Authority * Authority);
 
-    // Control moments grow with airspeed, but remain controllable near the ground.
-    const float DynamicControlScale = FMath::Max(0.12f, Authority * Authority);
+    // Local torque axes: X roll, Y pitch, Z yaw.
+    // With +X forward, negative Y raises the nose.
+    const float RollNm =
+        -RollInput * RollControlMoment * ControlScale
+        - AngularVelocityLocal.X * RollRateDamping;
 
-    // Unreal local axes: X forward, Y right, Z up.
-    // Positive pitch input means nose up; positive roll means right bank.
-    const float PitchMomentNm =
-        (PitchInput * PitchControlMoment * DynamicControlScale)
-        - (AngularVelocityLocal.Y * PitchRateDamping);
+    const float PitchNm =
+        -PitchInput * PitchControlMoment * ControlScale
+        - AngularVelocityLocal.Y * PitchRateDamping;
 
-    const float RollMomentNm =
-        (-RollInput * RollControlMoment * DynamicControlScale)
-        - (AngularVelocityLocal.X * RollRateDamping);
+    const float YawNm =
+        YawInput * YawControlMoment * ControlScale
+        - AngularVelocityLocal.Z * YawRateDamping;
 
-    const float YawMomentNm =
-        (YawInput * YawControlMoment * DynamicControlScale)
-        - (AngularVelocityLocal.Z * YawRateDamping);
-
-    const FVector LocalTorqueNm(PitchMomentNm == 0.0f ? 0.0f : 0.0f, -PitchMomentNm, YawMomentNm);
-    const FVector TorqueNm(
-        RollMomentNm,
-        -PitchMomentNm,
-        YawMomentNm
+    const FVector TorqueNm(RollNm, PitchNm, YawNm);
+    AircraftMesh->AddTorqueInRadians(
+        TorqueNm * SkyboundFlight::NewtonMeterToUnrealTorque
     );
-
-    AircraftMesh->AddTorqueInRadians(TorqueNm * SkyboundFlight::NewtonMetersToUnrealTorque);
 }
